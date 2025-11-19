@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scheduler - Expedition Planner</title>
+    <title>Scheduler - Expedition Planner (Collaborative)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -14,8 +14,19 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- LZ-String for URL Compression -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+    <!-- Firebase Libraries for Real-Time Collaboration (Using SDK v12.6.0) -->
+    <script type="module">
+        // Import all required Firebase functions
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
+        
+        // Expose all necessary Firebase functions to the global scope
+        window.firebase = { 
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, 
+            getFirestore, doc, setDoc, onSnapshot, collection, addDoc, updateDoc 
+        };
+    </script>
 
     <style>
         body {
@@ -85,6 +96,7 @@
                 </div>
             </div>
             <div class="flex gap-3 items-center">
+                <span id="userIdDisplay" class="text-xs text-emerald-300 italic font-mono hidden sm:block"></span>
                 <button onclick="app.resetApp()" class="text-sm text-emerald-200 hover:text-white hover:underline transition">
                     New Journey
                 </button>
@@ -180,11 +192,11 @@
                     <div class="text-amber-600 mt-1 text-xl"><i class="fa-solid fa-map-signs"></i></div>
                     <div class="text-sm text-amber-900">
                         <strong class="font-bold font-display">Exploration Guide:</strong>
-                        <p class="mt-1">Data is stored in your compass (the URL). No central server.</p>
+                        <p class="mt-1">This map is live and collaborative! Any changes you make are instantly shared.</p>
                         <ol class="list-decimal ml-4 mt-2 space-y-1 text-amber-800">
                             <li>Tap cells to mark your location.</li>
-                            <li>Click <span class="font-bold text-amber-700">"Share Map"</span> to generate a new coordinate link.</li>
-                            <li>Send the new link to your fellow explorers.</li>
+                            <li>Click <span class="font-bold text-amber-700">"Share Map"</span> to get the live link.</li>
+                            <li>Your Map ID is <span class="font-bold text-amber-700" id="mapIdDisplay">...</span></li>
                         </ol>
                     </div>
                 </div>
@@ -222,8 +234,43 @@
 <script>
 /**
  * APP LOGIC
- * State managed via URL Hash using LZ-String compression.
+ * State managed via real-time Firestore synchronization.
  */
+
+// Global Firebase/Firestore variables
+let db, auth, docRef, unsubscribeSnapshot; 
+
+// ------------------------------------------------------------------------------------------------
+// === FIREBASE CONFIGURATION (REQUIRED FOR GITHUB PAGES) ===
+// 
+// IMPORTANT: This configuration is taken from your provided snippet for 'scheduler-f069d'.
+// ------------------------------------------------------------------------------------------------
+
+const GITHUB_PAGES_FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBovwzFpe5Kk1yyAFxQiuHwtEiu3cIpkKU", 
+    authDomain: "scheduler-f069d.firebaseapp.com",
+    projectId: "scheduler-f069d",
+    storageBucket: "scheduler-f069d.firebasestorage.app",
+    messagingSenderId: "203036868446",
+    appId: "1:203036868446:web:80afa2900e602b0625d9cf"
+};
+
+// ------------------------------------------------------------------------------------------------
+// --- Initialization Logic ---
+// ------------------------------------------------------------------------------------------------
+
+// Check for variables provided by the Canvas environment (will be undefined on GitHub Pages)
+const canvasFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+const canvasAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : null;
+
+// Determine which config to use 
+const firebaseConfig = canvasFirebaseConfig || GITHUB_PAGES_FIREBASE_CONFIG;
+const initialAuthToken = canvasAuthToken;
+
+// Use the Canvas App ID if available, otherwise use a default hardcoded ID for GitHub Pages deployment.
+const appId = canvasAppId || 'github-expedition-planner'; 
+
 
 // Adventurous Earth/Nature Tones
 const COLORS = [
@@ -248,42 +295,154 @@ const app = {
     },
     
     tempPlaces: ['Base Camp', 'Summit'], 
+    docId: null,
 
-    init() {
-        const hash = window.location.hash.substring(1);
-        if (hash) {
+    async init() {
+        // 1. Initialize Firebase and Authenticate
+        // Check if window.firebase is populated by the module script
+        if (firebaseConfig.projectId && window.firebase && window.firebase.initializeApp) { 
+            const { 
+                initializeApp, getAuth, signInAnonymously, signInWithCustomToken, getFirestore,
+                doc, setDoc, onSnapshot, collection, addDoc, updateDoc
+            } = window.firebase; // Access functions from the globally exposed object
+            
             try {
-                const decompressed = LZString.decompressFromEncodedURIComponent(hash);
-                if (decompressed) {
-                    this.state = JSON.parse(decompressed);
-                    this.loadMainView();
+                const firebaseApp = initializeApp(firebaseConfig);
+                db = getFirestore(firebaseApp);
+                auth = getAuth(firebaseApp);
+                
+                // Log the user ID once authenticated
+                auth.onAuthStateChanged(user => {
+                    if (user) {
+                        document.getElementById('userIdDisplay').innerText = `User ID: ${user.uid}`;
+                    }
+                });
+
+                // Authentication: Use custom token if available (Canvas), otherwise use anonymous sign-in (GitHub Pages)
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                    console.log("Signed in with Custom Token.");
                 } else {
-                    this.loadSetupView();
+                    await signInAnonymously(auth);
+                    console.log("Signed in Anonymously.");
                 }
-            } catch (e) {
-                console.error("Failed to load state", e);
-                this.loadSetupView();
+            } catch (error) {
+                console.error("Firebase initialization or authentication failed:", error);
+                this.showToast("FIREBASE ERROR: Check console for missing config or network issues.", true);
             }
         } else {
-            this.loadSetupView();
+             console.error("Firebase configuration is missing or invalid. Real-time collaboration is disabled.");
+             this.showToast("FATAL ERROR: Firebase config missing. See script instructions.", true);
         }
+
+        // 2. Check for Document ID in URL (the hash now holds the doc ID)
+        const hash = window.location.hash.substring(1);
+        // Clean the hash to get just the ID, ignoring any other URL parameters
+        const docId = hash.split('&')[0]; 
+        this.docId = docId;
+        
+        // 3. Load shared view if ID exists AND Firebase is ready
+        // Wait briefly to ensure auth has started, though onAuthStateChanged is the proper listener
+        setTimeout(() => {
+             if (this.docId && db) {
+                this.loadSharedView(this.docId);
+            } else {
+                // Otherwise, start setup
+                this.loadSetupView();
+            }
+        }, 500); // Small delay to allow Firebase to auth/init on load
+        
         document.getElementById('setupStart').valueAsDate = new Date();
 
         // Global click listener to close menu
         document.addEventListener('click', (e) => {
             const menu = document.getElementById('cellMenu');
-            if (!menu.contains(e.target) && !e.target.closest('td')) {
+            // Check if the click was not inside the menu AND not on a cell that opens the menu
+            if (!menu.contains(e.target) && !e.target.closest('td') && !menu.classList.contains('hidden')) {
                 this.closeMenu();
             }
         });
     },
 
+    /* --- FIREBASE SYNC LOGIC --- */
+
+    loadSharedView(docId) {
+        if (unsubscribeSnapshot) {
+            unsubscribeSnapshot(); // Stop listening to previous doc if any
+        }
+        
+        // Ensure functions are available before calling
+        if (!window.firebase.doc || !db) return; 
+
+        // NOTE: The path uses the determined appId (either Canvas or 'github-expedition-planner')
+        docRef = window.firebase.doc(db, `artifacts/${appId}/public/data/expeditions`, docId);
+        
+        // Setup real-time listener
+        unsubscribeSnapshot = window.firebase.onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists() && docSnap.data().state) {
+                // Collaboration: Received new state from Firestore (including self-updates)
+                const newState = JSON.parse(docSnap.data().state);
+                
+                // Only trigger toast/full re-render if state actually changed significantly
+                if (JSON.stringify(this.state) !== JSON.stringify(newState)) {
+                    this.state = newState; 
+                    this.loadMainView();
+                    // Prevent toast on initial load and if the grid is empty
+                    if (this.state.places.length > 2 && this.state.users.length > 0) { 
+                        this.showToast("Map synchronized live!");
+                    }
+                } else if (this.state.places.length > 0 && document.getElementById('gridView').classList.contains('hidden')) {
+                    // Initial load/render if no state change was detected yet but needs initial draw
+                    this.state = newState; 
+                    this.loadMainView();
+                }
+
+                document.getElementById('mapIdDisplay').innerText = this.docId;
+            } else if (!docSnap.exists()) {
+                // Document not found (e.g., shared link is bad)
+                this.showToast("Shared map not found or deleted. Starting a new journey.", true);
+                this.docId = null;
+                history.replaceState(null, null, '#'); // Clear hash
+                this.loadSetupView();
+            }
+        }, (error) => {
+            console.error("Firestore onSnapshot error:", error);
+            this.showToast("Failed to connect to real-time service. Check your Firestore rules.", true);
+        });
+    },
+
+    async saveStateToFirestore() {
+        if (!this.docId || !docRef || !db) {
+            console.error("Cannot save: No document ID, reference, or database connection.");
+            this.showToast("Cannot save. Check console for Firebase errors.", true);
+            return;
+        }
+        
+        try {
+            // Only update the state field
+            await window.firebase.updateDoc(docRef, { 
+                state: JSON.stringify(this.state),
+                updatedAt: new Date().toISOString()
+            });
+            // Note: The UI updates are handled by the onSnapshot listener, not here.
+        } catch(e) {
+            console.error("Failed to save state to Firestore:", e);
+            this.showToast("Failed to save map changes. Check console.", true);
+        }
+    },
+
+
     /* --- VIEW MANAGEMENT --- */
     
     loadSetupView() {
+        if (unsubscribeSnapshot) {
+            unsubscribeSnapshot();
+            unsubscribeSnapshot = null;
+        }
         document.getElementById('setupView').classList.remove('hidden');
         document.getElementById('gridView').classList.add('hidden');
         document.getElementById('shareBtn').classList.add('hidden');
+        document.getElementById('headerTitle').innerText = 'Scheduler';
         this.renderSetupPlaces();
     },
 
@@ -297,7 +456,11 @@ const app = {
     },
 
     resetApp() {
-        if(confirm("Start a new expedition? Current map data will be lost if not saved.")) {
+        // Use a custom modal or simple confirm() as a fallback for modal behavior outside of a full app framework
+        if(confirm("Start a new expedition? Current live map data will be unlinked.")) {
+            if (unsubscribeSnapshot) {
+                unsubscribeSnapshot();
+            }
             window.location.hash = '';
             window.location.reload();
         }
@@ -336,13 +499,18 @@ const app = {
         this.renderSetupPlaces();
     },
 
-    initializeGroup() {
+    async initializeGroup() {
+        if (!db || !auth || !auth.currentUser) {
+            this.showToast("Real-time service not ready. Please wait for initialization.", true);
+            return;
+        }
+        
         const title = document.getElementById('setupName').value.trim() || 'My Adventure';
         const start = document.getElementById('setupStart').value;
         const days = parseInt(document.getElementById('setupDays').value) || 7;
 
         if (this.tempPlaces.length === 0) {
-            alert("Please add at least one waypoint.");
+            this.showToast("Please add at least one waypoint.", true);
             return;
         }
 
@@ -353,9 +521,28 @@ const app = {
             places: ['Unset', ...this.tempPlaces], 
             users: []
         };
+        
+        try {
+            // 1. Save state to a new Firestore document
+            // Path: artifacts/{appId}/public/data/expeditions
+            const newDocRef = await window.firebase.addDoc(window.firebase.collection(db, `artifacts/${appId}/public/data/expeditions`), {
+                state: JSON.stringify(this.state),
+                createdAt: new Date().toISOString(),
+                ownerId: auth.currentUser.uid // Use the UID from anonymous or custom token sign-in
+            });
+            
+            // 2. Set the document ID and update URL hash
+            this.docId = newDocRef.id;
+            history.replaceState(null, null, '#' + this.docId);
+            
+            // 3. Start listening to self-updates
+            this.loadSharedView(this.docId);
+            this.showToast("Live collaborative map created!");
 
-        this.updateURL();
-        this.loadMainView();
+        } catch(e) {
+            console.error("Error creating document:", e);
+            this.showToast("Failed to create live map. Check console.", true);
+        }
     },
 
     /* --- MAIN GRID LOGIC --- */
@@ -412,6 +599,11 @@ const app = {
     },
 
     confirmAddPlace() {
+        if (!this.docId) {
+            this.showToast("Please create an expedition first.", true);
+            return;
+        }
+
         const input = document.getElementById('modalPlaceInput');
         const name = input.value.trim();
         
@@ -423,9 +615,7 @@ const app = {
             }
             
             this.state.places.push(name);
-            this.updateURL();
-            this.renderLegend();
-            this.showToast("Waypoint added to map!");
+            this.saveStateToFirestore(); // <-- Save to Firestore
             this.closeModal();
         } else {
             input.focus();
@@ -532,7 +722,8 @@ const app = {
 
     generateDates() {
         const dates = [];
-        const start = new Date(this.state.startDate);
+        // Ensure start date is valid, default to today if not
+        const start = this.state.startDate ? new Date(this.state.startDate) : new Date();
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         
         for (let i = 0; i < this.state.days; i++) {
@@ -550,6 +741,11 @@ const app = {
     /* --- INTERACTION LOGIC --- */
 
     addUser() {
+        if (!this.docId) {
+            this.showToast("Please create an expedition first.", true);
+            return;
+        }
+
         const input = document.getElementById('newUserName');
         const name = input.value.trim();
         if (!name) {
@@ -563,16 +759,14 @@ const app = {
         const emptySchedule = new Array(this.state.days).fill(0);
         this.state.users.push({ name: name, schedule: emptySchedule });
         input.value = '';
-        this.updateURL();
-        this.renderGrid();
-        this.showToast(`${name} joined!`);
+        this.saveStateToFirestore(); // <-- Save to Firestore
     },
 
     removeUser(index) {
+        // Use a custom modal or simple confirm() as a fallback
         if(confirm(`Remove ${this.state.users[index].name} from the expedition?`)) {
             this.state.users.splice(index, 1);
-            this.updateURL();
-            this.renderGrid();
+            this.saveStateToFirestore(); // <-- Save to Firestore
         }
     },
 
@@ -581,6 +775,11 @@ const app = {
     activeCell: null, // { userIndex, dayIndex }
 
     openMenu(e, userIndex, dayIndex) {
+        if (!this.docId) {
+            this.showToast("Please create an expedition first.", true);
+            return;
+        }
+
         e.stopPropagation(); // Prevent document click from closing immediately
         this.activeCell = { userIndex, dayIndex };
         
@@ -605,16 +804,11 @@ const app = {
             
             btn.className = `w-full text-left px-4 py-2.5 text-sm font-medium hover:bg-stone-50 transition-colors flex items-center gap-3 ${isSelected ? 'bg-stone-50' : ''}`;
             
-            // Dot indicator
-            const dotClass = index === 0 ? 'border border-stone-300 bg-transparent' : style.bg.replace('bg-', 'bg-');
-            const dotColor = index === 0 ? '' : style.text.replace('text-', 'bg-'); // rough way to get a solid color
-            
             // Custom bullet styling
             let iconHtml = '';
             if (index === 0) {
                 iconHtml = `<div class="w-2.5 h-2.5 rounded-full border-2 border-stone-300"></div>`;
             } else {
-                // Use the defined hex color or fallback class
                 iconHtml = `<div class="w-2.5 h-2.5 rounded-full ${style.bg} border ${style.border}"></div>`;
             }
 
@@ -632,12 +826,12 @@ const app = {
         menu.classList.remove('hidden');
         
         // Check if menu goes off screen bottom
-        const menuHeight = Math.min(this.state.places.length * 40 + 40, 300); // Approx height
+        const menuHeight = Math.min(this.state.places.length * 40 + 40, 300); // Approx height (40px per item + header)
         const spaceBelow = window.innerHeight - rect.bottom;
         
-        if (spaceBelow < menuHeight) {
-            // Show above cell
-            menu.style.top = `${rect.top - menu.offsetHeight}px`;
+        if (spaceBelow < menuHeight && rect.top > menuHeight) {
+            // Show above cell (if enough space above)
+            menu.style.top = `${rect.top - menu.offsetHeight - 5}px`;
             menu.style.transformOrigin = 'bottom left';
         } else {
             // Show below cell
@@ -678,25 +872,19 @@ const app = {
         
         this.state.users[userIndex].schedule[dayIndex] = placeIndex;
         
-        this.updateURL();
-        this.renderGrid();
+        this.saveStateToFirestore(); // <-- Save to Firestore
         this.closeMenu();
     },
 
-    // Replaced toggleCell with openMenu logic above
-    // toggleCell(userIndex, dayIndex) { ... } // REMOVED
-
-    updateURL() {
-        const json = JSON.stringify(this.state);
-        const compressed = LZString.compressToEncodedURIComponent(json);
-        history.replaceState(null, null, '#' + compressed);
-    },
-
     copyLink() {
-        this.updateURL();
-        const url = window.location.href;
+        if (!this.docId) {
+            this.showToast("Map must be created first (start an expedition).", true);
+            return;
+        }
+        // Construct the clean URL with just the ID in the hash
+        const url = window.location.href.split('#')[0] + '#' + this.docId; 
         navigator.clipboard.writeText(url).then(() => {
-            this.showToast("Map coordinates copied!");
+            this.showToast("Live Map Link copied! Share this link for real-time collaboration.");
         }).catch(err => {
             this.showToast("Failed to copy", true);
         });
@@ -707,11 +895,19 @@ const app = {
         const msgSpan = document.getElementById('toastMsg');
         const icon = toast.querySelector('i');
         msgSpan.innerText = msg;
+        
+        // Reset styles
+        toast.classList.remove('bg-red-900', 'border-red-700', 'bg-emerald-900', 'border-emerald-700');
+        icon.classList.remove('text-red-400', 'fa-circle-exclamation', 'text-emerald-400', 'fa-circle-check');
+
         if (isError) {
-            icon.className = "fa-solid fa-circle-exclamation text-red-400";
+            icon.classList.add("fa-circle-exclamation", "text-red-400");
+            toast.classList.add('bg-red-900', 'border-red-700');
         } else {
-            icon.className = "fa-solid fa-circle-check text-emerald-400";
+            icon.classList.add("fa-circle-check", "text-emerald-400");
+            toast.classList.add('bg-emerald-900', 'border-emerald-700');
         }
+        
         toast.classList.remove('translate-y-24');
         setTimeout(() => {
             toast.classList.add('translate-y-24');
