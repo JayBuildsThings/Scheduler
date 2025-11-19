@@ -14,9 +14,6 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- LZ-String is no longer needed but kept in case of fallback -->
-    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script> -->
-
     <style>
         body {
             font-family: 'Fira Sans', sans-serif;
@@ -25,921 +22,590 @@
         h1, h2, h3, button, .font-display {
             font-family: 'Outfit', sans-serif;
         }
+        /* Topography pattern for background aesthetic */
         .topo-bg {
             background-color: #f5f5f4;
             background-image: 
                 radial-gradient(#d6d3d1 1px, transparent 1px),
-                radial-gradient(#d6d3d1 1px, transparent 1px);
-            background-size: 20px 20px;
-            background-position: 0 0, 10px 10px;
+                radial-gradient(#d6d3d1 1px, #f5f5f4 1px);
+            background-size: 40px 40px;
+            background-position: 0 0, 20px 20px;
         }
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
+
+        /* Custom cell styles for clear visibility */
+        .schedule-cell {
+            /* Now cells are taller to better fit the day name */
+            min-width: 120px;
+            max-width: 120px;
+            height: 60px; /* Increased height for better tap target */
+            cursor: pointer;
+            transition: background-color 0.1s;
         }
-        ::-webkit-scrollbar-track {
-            background: #e7e5e4;
+        .schedule-cell:hover {
+            opacity: 0.9;
         }
-        ::-webkit-scrollbar-thumb {
-            background: #a8a29e;
-            border-radius: 5px;
-            border: 2px solid #e7e5e4;
+        /* User header cell needs more width for names */
+        .user-header-cell {
+            min-width: 120px;
+            max-width: 120px;
         }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #78716c;
+        /* Day header cell needs to be sticky */
+        .day-header-cell {
+            min-width: 80px; /* Day column is narrower now */
+            max-width: 80px;
         }
-        .animate-slide-up {
-            animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+
+        /* Fix the user header bar for horizontal scrolling */
+        .schedule-scroll thead th {
+            z-index: 10;
         }
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+        /* Fix the Day/Time header cell for vertical sticking */
+        .schedule-scroll tbody th {
+            position: sticky;
+            left: 0;
+            z-index: 5;
+            background-color: #e7e5e4; /* Stone-200 */
         }
-        /* Adventure Inputs */
-        .adventure-input {
-            transition: all 0.2s;
-            border-bottom-width: 2px;
+        /* Fix the corner cell */
+        .schedule-scroll thead th:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 20;
+            background-color: #d6d3d1; /* Stone-300 */
         }
-        .adventure-input:focus {
-            border-color: #d97706; /* Amber-600 */
-            box-shadow: none;
-        }
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .no-scrollbar {
-            -ms-overflow-style: none; /* IE and Edge */
-            scrollbar-width: none; /* Firefox */
-        }
+        
     </style>
 </head>
-<body class="text-stone-800 h-screen flex flex-col topo-bg overflow-hidden">
+<body class="topo-bg min-h-screen">
 
-    <!-- Header -->
-    <header class="bg-emerald-900 text-white shadow-lg z-10 relative overflow-hidden">
-        <!-- decorative circle -->
-        <div class="absolute -right-10 -top-10 w-32 h-32 bg-emerald-800 rounded-full opacity-50"></div>
-        
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 py-4 flex justify-between items-center relative z-10">
-            <div class="flex items-center gap-3">
-                <div class="bg-amber-500 text-emerald-900 p-2 rounded-lg shadow-md transform -rotate-3">
-                    <i class="fa-solid fa-compass text-xl"></i>
-                </div>
-                <div>
-                    <h1 class="text-2xl font-extrabold tracking-tight" id="headerTitle">Scheduler</h1>
-                    <div class="text-xs text-emerald-200 font-medium tracking-wider uppercase">Expedition Planner</div>
-                </div>
+    <div id="app" class="p-4 sm:p-8 flex flex-col items-center">
+        <!-- Header -->
+        <header class="w-full max-w-5xl mb-8 text-center">
+            <h1 class="font-display text-4xl sm:text-5xl font-extrabold text-stone-800 tracking-tighter">Expedition Scheduler</h1>
+            <p class="text-stone-600 mt-2 text-lg">Plan your group's weekly schedule and activities.</p>
+            <div id="user-info" class="mt-4 text-sm text-stone-500">
+                <!-- User ID will be displayed here -->
             </div>
-            <div class="flex gap-3 items-center">
-                <div id="authStatus" class="flex items-center text-emerald-200 text-xs gap-1 opacity-70">
-                    <i class="fa-solid fa-sync fa-spin"></i>
-                    <span>Connecting...</span>
-                </div>
-                <button onclick="app.requestReset()" class="text-sm text-emerald-200 hover:text-white hover:underline transition">
-                    New Journey
-                </button>
-                <button id="shareBtn" onclick="app.copyLink()" class="hidden bg-amber-500 hover:bg-amber-400 text-emerald-950 px-5 py-2 rounded-full text-sm font-bold transition flex items-center gap-2 shadow-lg transform hover:-translate-y-0.5 active:translate-y-0">
-                    <i class="fa-solid fa-share-nodes"></i> Share Map
-                </button>
-            </div>
-        </div>
-    </header>
-    
-    <!-- Loading Spinner -->
-    <div id="loadingOverlay" class="fixed inset-0 bg-white/70 backdrop-blur-sm z-50 flex flex-col items-center justify-center transition-opacity duration-300">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
-        <p class="mt-4 text-emerald-700 font-semibold">Loading Expedition...</p>
-    </div>
+        </header>
 
-    <!-- Main Content Area -->
-    <main class="flex-1 overflow-hidden relative">
-        
-        <!-- VIEW 1: SETUP WIZARD -->
-        <div id="setupView" class="absolute inset-0 flex items-center justify-center p-4 overflow-y-auto">
-            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-8 animate-slide-up border-t-4 border-amber-500 relative">
-                <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-2 rounded-full shadow-sm border border-stone-100">
-                    <i class="fa-solid fa-map-location-dot text-3xl text-emerald-600"></i>
-                </div>
-
-                <h2 class="text-3xl font-bold mb-2 text-center text-emerald-950 mt-4 font-display">Start an Adventure</h2>
-                <p class="text-stone-500 mb-8 text-center">Where is your team heading? Set the coordinates.</p>
-                
-                <div class="space-y-6">
-                    <!-- Group Name -->
-                    <div>
-                        <label class="block text-xs font-bold text-stone-400 uppercase tracking-wider mb-1">Adventure Name</label>
-                        <input type="text" id="setupName" placeholder="e.g. Mountain Trek 2025" class="adventure-input w-full bg-stone-50 border-0 border-b-2 border-stone-200 rounded-t-md px-4 py-3 focus:bg-amber-50 focus:border-amber-500 outline-none text-lg font-semibold text-stone-800 placeholder-stone-400">
-                    </div>
-
-                    <!-- Date Range -->
-                    <div class="grid grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-xs font-bold text-stone-400 uppercase tracking-wider mb-1">Kickoff Date</label>
-                            <input type="date" id="setupStart" class="adventure-input w-full bg-stone-50 border-0 border-b-2 border-stone-200 rounded-t-md px-4 py-3 focus:bg-amber-50 focus:border-amber-500 outline-none font-medium">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-stone-400 uppercase tracking-wider mb-1">Duration (Days)</label>
-                            <input type="number" id="setupDays" value="7" min="1" max="30" class="adventure-input w-full bg-stone-50 border-0 border-b-2 border-stone-200 rounded-t-md px-4 py-3 focus:bg-amber-50 focus:border-amber-500 outline-none font-medium">
-                        </div>
-                    </div>
-
-                    <!-- Places Definition -->
-                    <div class="bg-stone-50 p-4 rounded-lg border border-stone-200">
-                        <label class="block text-xs font-bold text-stone-400 uppercase tracking-wider mb-3">Waypoints / Locations</label>
-                        <div id="placeList" class="space-y-2 mb-3">
-                            <!-- Dynamic inputs -->
-                        </div>
-                        <div class="flex gap-2">
-                            <input type="text" id="newPlaceInput" placeholder="Add location (e.g. Base Camp)" class="flex-1 bg-white border border-stone-300 rounded-md px-3 py-2 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none" onkeypress="if(event.key === 'Enter') app.addSetupPlace()">
-                            <button onclick="app.addSetupPlace()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md transition shadow-sm">
-                                <i class="fa-solid fa-plus"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <button onclick="app.initializeGroup()" class="w-full bg-emerald-800 hover:bg-emerald-900 text-white py-4 rounded-lg font-bold text-lg shadow-lg transition transform active:scale-[0.98] flex justify-center items-center gap-2 group">
-                        Create Itinerary <i class="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+        <!-- Main Content Area -->
+        <main class="w-full max-w-5xl bg-white shadow-xl rounded-xl p-4 sm:p-6">
+            
+            <!-- Management Bar -->
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
+                <div class="flex space-x-2">
+                    <button onclick="app.showAddUserModal()" class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
+                        <i class="fas fa-user-plus"></i>
+                        <span class="font-display">Add User</span>
+                    </button>
+                    <button onclick="app.showAddPlaceModal()" class="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <span class="font-display">Add Place</span>
                     </button>
                 </div>
-            </div>
-        </div>
-
-        <!-- VIEW 2: MAIN GRID -->
-        <div id="gridView" class="hidden absolute inset-0 flex flex-col">
-            
-            <!-- Toolbar -->
-            <div class="bg-white/80 backdrop-blur-md border-b border-stone-200 px-4 sm:px-8 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 z-10">
-                
-                <!-- Legend / Palette -->
-                <div class="flex items-center gap-3 overflow-x-auto max-w-full pb-2 sm:pb-0 no-scrollbar" id="legendContainer">
-                    <!-- Legend items injected here -->
-                </div>
-
-                <!-- Add User Action -->
-                <div class="flex gap-0 shadow-sm rounded-md">
-                    <input type="text" id="newUserName" placeholder="Explorer Name" class="flex-1 sm:w-48 border border-stone-300 rounded-l-md px-4 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none bg-white">
-                    <button onclick="app.addUser()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-r-md text-sm font-bold whitespace-nowrap transition border-l border-emerald-700">
-                        Join <i class="fa-solid fa-user-plus ml-1"></i>
+                <div class="flex space-x-2">
+                    <button onclick="app.showConfirmationModal('Are you sure you want to reset the schedule? This cannot be undone.', app.resetSchedule)" class="flex items-center space-x-2 bg-rose-500 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
+                        <i class="fas fa-trash-alt"></i>
+                        <span class="font-display">Reset</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Scrollable Grid Area -->
-            <div class="flex-1 overflow-auto p-4 sm:p-8 pb-20">
-                <div class="bg-white rounded-lg shadow-xl border border-stone-200 overflow-hidden min-w-max mx-auto">
-                    <table class="border-collapse w-full" id="scheduleTable">
-                        <!-- Table generated by JS -->
-                    </table>
-                </div>
-                
-                <div class="mt-8 max-w-2xl mx-auto bg-amber-50 border border-amber-100 rounded-lg p-5 flex gap-4 items-start shadow-sm">
-                    <div class="text-amber-600 mt-1 text-xl"><i class="fa-solid fa-map-signs"></i></div>
-                    <div class="text-sm text-amber-900">
-                        <strong class="font-bold font-display">Exploration Guide:</strong>
-                        <p class="mt-1">This map is collaborative and updates in real-time. Share the link to invite others!</p>
-                        <ol class="list-decimal ml-4 mt-2 space-y-1 text-amber-800">
-                            <li>Tap cells to mark your location.</li>
-                            <li>Click <span class="font-bold text-amber-700">"Share Map"</span> to copy the unique link.</li>
-                            <li><span id="currentUserIdDisplay"></span></li>
-                        </ol>
-                    </div>
-                </div>
+            <!-- Schedule Grid Container (Horizontal scroll now handles users, not days) -->
+            <div class="overflow-x-auto schedule-scroll shadow-inner rounded-lg border border-stone-200">
+                <table id="scheduleGrid" class="w-full whitespace-nowrap">
+                    <!-- Grid content will be rendered here -->
+                </table>
             </div>
-        </div>
-
-    </main>
-
-    <!-- Generic Confirmation Modal (Replaces native confirm/alert) -->
-    <div id="confirmationModal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-stone-900/40 backdrop-blur-sm p-4 opacity-0 transition-opacity duration-200">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 border-t-4 border-red-500 transform scale-95 transition-transform duration-200" id="confirmationModalContent">
-            <h3 id="confirmTitle" class="text-lg font-bold text-red-700 mb-2 font-display">Confirm Action</h3>
-            <p id="confirmMessage" class="text-stone-600 text-sm mb-6">Are you sure you want to proceed?</p>
-            
-            <div class="flex justify-end gap-2">
-                <button onclick="app.rejectConfirmation()" class="px-4 py-2 text-stone-500 hover:bg-stone-100 rounded-lg text-sm font-medium transition">Cancel</button>
-                <button id="confirmBtn" onclick="app.executeConfirmation()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold shadow-md transition transform active:scale-95">Confirm</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add Waypoint Modal -->
-    <div id="waypointModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-stone-900/40 backdrop-blur-sm p-4 opacity-0 transition-opacity duration-200">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 border-t-4 border-emerald-500 transform scale-95 transition-transform duration-200" id="waypointModalContent">
-            <h3 class="text-lg font-bold text-emerald-950 mb-2 font-display">New Destination</h3>
-            <p class="text-stone-500 text-sm mb-4">Where is the team heading next?</p>
-            
-            <input type="text" id="modalPlaceInput" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-4 py-2 mb-4 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-medium text-stone-700" placeholder="e.g. Hidden Waterfall" onkeypress="if(event.key === 'Enter') app.confirmAddPlace()">
-            
-            <div class="flex justify-end gap-2">
-                <button onclick="app.closeWaypointModal()" class="px-4 py-2 text-stone-500 hover:bg-stone-100 rounded-lg text-sm font-medium transition">Cancel</button>
-                <button onclick="app.confirmAddPlace()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold shadow-md transition transform active:scale-95">Add Location</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- CUSTOM DROPDOWN MENU -->
-    <div id="cellMenu" class="hidden fixed z-50 w-48 bg-white/95 backdrop-blur-xl rounded-xl shadow-2xl border border-stone-200 py-1 transform transition-all duration-200 origin-top-left ring-1 ring-black/5">
-        <!-- Menu items injected by JS -->
-    </div>
-
-    <!-- Notification Toast -->
-    <div id="toast" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 translate-y-24 bg-emerald-900 text-white px-6 py-3 rounded-full shadow-2xl transition-transform duration-300 flex items-center gap-3 z-50 border border-emerald-700">
-        <i class="fa-solid fa-circle-check text-emerald-400"></i>
-        <span id="toastMsg" class="font-medium">Action Successful</span>
-    </div>
-
-<script type="module">
-    // Firebase Imports
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-    // Global Firebase/App Variables
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-    let db = null;
-    let auth = null;
-    let userId = null;
-    let expeditionRef = null;
-    let isAuthReady = false;
-
-    // Adventurous Earth/Nature Tones
-    const COLORS = [
-        { bg: 'bg-stone-100', text: 'text-stone-400', border: 'border-stone-200', hex: '#f5f5f4' }, // Default/Empty
-        { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200', hex: '#d1fae5' },
-        { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200', hex: '#fef3c7' },
-        { bg: 'bg-sky-100', text: 'text-sky-800', border: 'border-sky-200', hex: '#e0f2fe' },
-        { bg: 'bg-rose-100', text: 'text-rose-800', border: 'border-rose-200', hex: '#ffe4e6' },
-        { bg: 'bg-violet-100', text: 'text-violet-800', border: 'border-violet-200', hex: '#ede9fe' },
-        { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-200', hex: '#ffedd5' },
-        { bg: 'bg-lime-100', text: 'text-lime-800', border: 'border-lime-200', hex: '#ecfccb' },
-        { bg: 'bg-cyan-100', text: 'text-cyan-800', border: 'border-cyan-200', hex: '#cffafe' },
-    ];
-
-    const app = {
-        state: {
-            title: '',
-            startDate: '',
-            days: 7,
-            places: [], 
-            users: []
-        },
+        </main>
         
-        tempPlaces: ['Base Camp', 'Summit'], 
-        
-        // Confirmation Modal state
-        confirmAction: null,
-        confirmArgs: [],
+        <!-- Places Key -->
+        <section class="w-full max-w-5xl mt-8 p-4 sm:p-6 bg-white shadow-xl rounded-xl">
+            <h2 class="font-display text-2xl font-bold text-stone-700 mb-4">Places Key</h2>
+            <div id="placesKey" class="flex flex-wrap gap-3">
+                <!-- Places will be rendered here -->
+            </div>
+        </section>
 
-        async init() {
-            setLogLevel('Debug');
-            const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
+    </div>
 
-            try {
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
+    <!-- ----------------- MODALS ----------------- -->
+
+    <!-- Modal for Adding/Editing User -->
+    <div id="userModal" class="fixed inset-0 bg-stone-900 bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h3 class="font-display text-2xl font-bold text-stone-800 mb-4">Add New User</h3>
+            <input type="text" id="userNameInput" placeholder="Enter user name" class="w-full p-3 border border-stone-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 mb-4">
+            <div class="flex justify-end space-x-3">
+                <button onclick="app.closeAddUserModal()" class="bg-stone-300 hover:bg-stone-400 text-stone-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button onclick="app.addUser()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Add User</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Adding/Editing Place -->
+    <div id="placeModal" class="fixed inset-0 bg-stone-900 bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h3 class="font-display text-2xl font-bold text-stone-800 mb-4">Add New Place</h3>
+            <input type="text" id="placeNameInput" placeholder="Enter place name (e.g., Mountain A)" class="w-full p-3 border border-stone-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 mb-4">
+            <input type="color" id="placeColorInput" value="#65a30d" class="w-full h-10 border border-stone-300 rounded-lg mb-4">
+            <div class="flex justify-end space-x-3">
+                <button onclick="app.closeAddPlaceModal()" class="bg-stone-300 hover:bg-stone-400 text-stone-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button onclick="app.addPlace()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg">Add Place</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Menu for Cell Selection -->
+    <div id="selectionMenu" class="absolute bg-white rounded-xl shadow-2xl p-3 z-40 border border-stone-200 hidden">
+        <h4 class="font-display text-lg font-semibold text-stone-700 mb-2 border-b pb-1">Set Activity</h4>
+        <div id="placeOptions" class="flex flex-col space-y-1">
+            <!-- Options dynamically added here -->
+        </div>
+        <button onclick="app.clearCell()" class="w-full mt-3 bg-red-100 hover:bg-red-200 text-red-700 font-medium py-1 px-2 rounded-lg text-sm transition-colors">
+            Clear
+        </button>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmationModal" class="fixed inset-0 bg-stone-900 bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+            <p id="confirmMessage" class="text-stone-700 mb-6 text-center">Are you sure?</p>
+            <div class="flex justify-center space-x-4">
+                <button onclick="app.rejectConfirmation()" class="bg-stone-300 hover:bg-stone-400 text-stone-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button onclick="app.acceptConfirmation()" class="bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-lg">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-0 left-1/2 transform -translate-x-1/2 translate-y-24 transition-transform duration-500 ease-in-out mb-6 p-3 bg-emerald-900 border border-emerald-700 text-white rounded-xl shadow-lg flex items-center space-x-3 z-50">
+        <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toastMsg" class="font-medium">Action successful!</span>
+    </div>
+
+    <!-- ----------------- JAVASCRIPT & FIREBASE ----------------- -->
+
+    <!-- Firebase SDK Imports (MUST use type="module") -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc, 
+            onSnapshot, 
+            setLogLevel 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Firebase variables (MUST be available globally for app methods)
+        let appInstance, db, auth;
+        let currentUserId = null;
+        let isAuthReady = false;
+
+        // Configuration and Initialization
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+        // Initialize App and Services
+        appInstance = initializeApp(firebaseConfig);
+        db = getFirestore(appInstance);
+        auth = getAuth(appInstance);
+        setLogLevel('Debug'); // Enable debug logging
+
+        // The name of the Firestore document where the state is saved
+        const STATE_DOC_ID = "current_schedule";
+
+        // Firebase Pathing Helper
+        function getScheduleDocRef(userId) {
+            // Path: /artifacts/{appId}/users/{userId}/data/{docId}
+            return doc(db, 'artifacts', appId, 'users', userId, 'scheduleData', STATE_DOC_ID);
+        }
+
+        // --- AUTHENTICATION & INITIALIZATION ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUserId = user.uid;
+                isAuthReady = true;
+                // Update UI with user ID
+                document.getElementById('user-info').innerText = `Your User ID: ${currentUserId}`;
                 
-                userId = auth.currentUser?.uid;
-                
-                if (userId) {
+                // Once authenticated, load the data and set up listener
+                app.startDataListener();
+            } else {
+                // Attempt Sign-in
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Firebase Auth Error:", error);
+                    app.showToast("Authentication failed. Using default local state.", true);
+                    // Fallback: Use default state if sign-in fails
+                    currentUserId = 'anonymous'; // Set a temporary ID
                     isAuthReady = true;
-                    document.getElementById('authStatus').innerHTML = `<i class="fa-solid fa-user-check text-emerald-400"></i><span>Connected</span>`;
-                    document.getElementById('currentUserIdDisplay').innerHTML = `Your User ID (for sharing): <span class="font-bold font-mono text-emerald-800">${userId}</span>`;
-                    
-                    this.setupExpedition();
-                } else {
-                    document.getElementById('authStatus').innerHTML = `<i class="fa-solid fa-user-xmark text-red-400"></i><span>Auth Failed</span>`;
+                    app.loadInitialState();
+                    app.renderGrid();
                 }
-
-            } catch (error) {
-                console.error("Firebase Auth or Init failed:", error);
-                document.getElementById('authStatus').innerHTML = `<i class="fa-solid fa-exclamation-triangle text-red-400"></i><span>Error</span>`;
             }
-            
-            document.getElementById('setupStart').valueAsDate = new Date();
+        });
 
-            // Global click listener to close menu
-            document.addEventListener('click', (e) => {
-                const menu = document.getElementById('cellMenu');
-                if (!menu.contains(e.target) && !e.target.closest('td')) {
-                    this.closeMenu();
-                }
-            });
-        },
-        
-        setupExpedition() {
-            let expeditionId = window.location.hash.substring(1);
 
-            if (!expeditionId) {
-                // If no ID in hash, start setup view
-                this.loadSetupView();
-            } else {
-                // If ID exists, load it
-                expeditionRef = doc(db, `artifacts/${appId}/public/data/expeditions`, expeditionId);
-                this.listenForUpdates();
-                // Show loading screen until first data snapshot arrives
-                document.getElementById('loadingOverlay').classList.remove('hidden');
-            }
-        },
+        // ----------------- APPLICATION LOGIC -----------------
 
-        listenForUpdates() {
-            if (!expeditionRef) return;
-            
-            // Set up real-time listener
-            onSnapshot(expeditionRef, (doc) => {
-                document.getElementById('loadingOverlay').classList.add('hidden');
+        // Default application state
+        const DEFAULT_STATE = {
+            users: [
+                { name: "Joe", schedule: [0, 0, 0, 0, 0, 0, 0] },
+                { name: "Jane", schedule: [1, 1, 1, 1, 1, 1, 1] },
+            ],
+            places: [
+                { name: "Free", color: "#6b7280", isClear: true }, // Index 0: Default clear state
+                { name: "The Lake", color: "#3b82f6" },
+                { name: "Mountain Trail", color: "#10b981" },
+                { name: "Town Visit", color: "#f59e0b" },
+            ],
+            days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        };
+
+        window.app = {
+            // State initialization
+            state: DEFAULT_STATE,
+            // activeCell now tracks (Day Index, User Index)
+            activeCell: { dayIndex: -1, userIndex: -1 }, 
+            confirmAction: null,
+
+            // --- FIREBASE INTEGRATION METHODS ---
+
+            startDataListener() {
+                if (!isAuthReady || !currentUserId) return;
                 
-                if (doc.exists()) {
-                    const data = doc.data();
-                    // Deserialize state (ensures old format compatibility)
-                    this.state = data.state || data; 
-                    this.loadMainView();
-                } else {
-                    // Document was deleted or is brand new, show setup view
-                    this.loadSetupView();
-                    this.showToast("Expedition not found. Start a new one!", true);
-                    // Clear the hash since the document is gone/not there
-                    history.replaceState(null, null, ' ');
-                }
-            }, (error) => {
-                console.error("Error listening to expedition data:", error);
-                this.showToast("Real-time sync failed. Check console.", true);
-            });
-        },
-
-        async saveState() {
-            if (!expeditionRef) {
-                console.error("Expedition reference not set.");
-                this.showToast("Cannot save: Expedition not initialized.", true);
-                return;
-            }
-            
-            try {
-                // Save the entire state object
-                await setDoc(expeditionRef, {
-                    state: this.state,
-                    updatedAt: serverTimestamp(),
-                    userId: userId, // Record the last updater
-                }, { merge: true });
-                // We don't show a toast here because the onSnapshot listener handles the UI update.
-            } catch (e) {
-                console.error("Error saving state:", e);
-                this.showToast("Failed to save data. Try refreshing.", true);
-            }
-        },
-
-        /* --- VIEW MANAGEMENT --- */
-        
-        loadSetupView() {
-            document.getElementById('setupView').classList.remove('hidden');
-            document.getElementById('gridView').classList.add('hidden');
-            document.getElementById('shareBtn').classList.add('hidden');
-            this.renderSetupPlaces();
-        },
-
-        loadMainView() {
-            document.getElementById('setupView').classList.add('hidden');
-            document.getElementById('gridView').classList.remove('hidden');
-            document.getElementById('shareBtn').classList.remove('hidden');
-            document.getElementById('headerTitle').innerText = this.state.title || 'Scheduler';
-            this.renderLegend();
-            this.renderGrid();
-        },
-
-        requestReset() {
-            this.openConfirmationModal({
-                title: "Start New Journey?",
-                message: "This will abandon the current map and create a brand new expedition. Are you sure you want to proceed?",
-                confirmText: "Yes, Start Over",
-                confirmColor: "bg-red-600 hover:bg-red-700",
-                callback: () => this.executeReset()
-            });
-        },
-
-        executeReset() {
-            // Clears hash and reloads, forcing setup view or new ID gen
-            history.replaceState(null, null, ' ');
-            window.location.reload();
-        },
-
-        /* --- SETUP WIZARD LOGIC --- */
-
-        renderSetupPlaces() {
-            const container = document.getElementById('placeList');
-            container.innerHTML = '';
-            this.tempPlaces.forEach((place, index) => {
-                const div = document.createElement('div');
-                div.className = 'flex items-center justify-between bg-white px-3 py-2 rounded border border-stone-200 shadow-sm';
-                div.innerHTML = `
-                    <span class="text-sm font-bold text-stone-700"><i class="fa-solid fa-location-dot text-emerald-500 mr-2"></i>${place}</span>
-                    <button onclick="app.removeSetupPlace(${index})" class="text-stone-300 hover:text-red-500 transition">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
-                `;
-                container.appendChild(div);
-            });
-        },
-
-        addSetupPlace() {
-            const input = document.getElementById('newPlaceInput');
-            const val = input.value.trim();
-            if (val) {
-                this.tempPlaces.push(val);
-                input.value = '';
-                this.renderSetupPlaces();
-            } else {
-                this.showToast("Please enter a location name.", true);
-            }
-        },
-
-        removeSetupPlace(index) {
-            this.tempPlaces.splice(index, 1);
-            this.renderSetupPlaces();
-        },
-
-        async initializeGroup() {
-            if (!isAuthReady) {
-                this.showToast("Authentication not ready. Please wait a moment and try again.", true);
-                return;
-            }
-
-            const title = document.getElementById('setupName').value.trim() || 'My Adventure';
-            const start = document.getElementById('setupStart').value;
-            const days = parseInt(document.getElementById('setupDays').value) || 7;
-
-            if (this.tempPlaces.length === 0) {
-                this.showToast("Please add at least one waypoint.", true);
-                return;
-            }
-            if (!start) {
-                this.showToast("Please select a kickoff date.", true);
-                return;
-            }
-
-            this.state = {
-                title: title,
-                startDate: start,
-                days: days,
-                places: ['Unset', ...this.tempPlaces], 
-                users: []
-            };
-
-            // 1. Create a new document in Firestore
-            const collectionRef = collection(db, `artifacts/${appId}/public/data/expeditions`);
-            const newDocRef = await addDoc(collectionRef, {
-                state: this.state,
-                createdAt: serverTimestamp(),
-                userId: userId,
-            });
-            
-            // 2. Set the document reference and update the URL hash
-            expeditionRef = newDocRef;
-            history.replaceState(null, null, '#' + newDocRef.id);
-            
-            // 3. Start listening for changes and load the view
-            this.listenForUpdates();
-            this.loadMainView();
-            this.showToast("Expedition created successfully!");
-        },
-
-        /* --- MAIN GRID LOGIC --- */
-
-        renderLegend() {
-            const container = document.getElementById('legendContainer');
-            container.innerHTML = '';
-
-            for (let i = 1; i < this.state.places.length; i++) {
-                const placeName = this.state.places[i];
-                const style = COLORS[i % COLORS.length];
+                const docRef = getScheduleDocRef(currentUserId);
                 
-                const badge = document.createElement('div');
-                badge.className = `flex items-center gap-2 px-4 py-1.5 rounded-full border ${style.bg} ${style.border} ${style.text} text-xs font-bold whitespace-nowrap shadow-sm select-none cursor-default`;
-                badge.innerHTML = `<i class="fa-solid fa-location-pin text-xs opacity-70"></i>${placeName}`;
-                container.appendChild(badge);
-            }
+                // Listen for real-time updates
+                onSnapshot(docRef, (docSnap) => {
+                    if (docSnap.exists() && docSnap.data().state) {
+                        const loadedState = JSON.parse(docSnap.data().state);
+                        this.state = loadedState;
+                        this.showToast("Schedule loaded successfully!");
+                    } else {
+                        // If document doesn't exist, use default state and save it
+                        this.state = DEFAULT_STATE;
+                        this.showToast("No remote schedule found. Starting a new one.");
+                        this.saveStateToFirestore();
+                    }
+                    this.renderGrid();
+                }, (error) => {
+                    console.error("Firestore listen error:", error);
+                    this.showToast("Error loading schedule: " + error.message, true);
+                    this.state = DEFAULT_STATE; // Fallback
+                    this.renderGrid();
+                });
+            },
 
-            // Add "New Place" button
-            const addBtn = document.createElement('button');
-            addBtn.className = "flex items-center gap-2 px-4 py-1.5 rounded-full border-2 border-dashed border-stone-300 text-stone-400 hover:text-emerald-700 hover:border-emerald-500 hover:bg-emerald-50 text-xs font-bold whitespace-nowrap transition-all group";
-            addBtn.innerHTML = `<i class="fa-solid fa-plus group-hover:rotate-90 transition-transform"></i> Add Waypoint`;
-            addBtn.onclick = () => this.openWaypointModal();
-            container.appendChild(addBtn);
-        },
-
-        openWaypointModal() {
-            const modal = document.getElementById('waypointModal');
-            const content = document.getElementById('waypointModalContent');
-            const input = document.getElementById('modalPlaceInput');
-            
-            modal.classList.remove('hidden');
-            requestAnimationFrame(() => {
-                modal.classList.remove('opacity-0');
-                content.classList.remove('scale-95');
-                content.classList.add('scale-100');
-                input.focus();
-            });
-        },
-
-        closeWaypointModal() {
-            const modal = document.getElementById('waypointModal');
-            const content = document.getElementById('waypointModalContent');
-            
-            modal.classList.add('opacity-0');
-            content.classList.remove('scale-100');
-            content.classList.add('scale-95');
-            
-            setTimeout(() => {
-                modal.classList.add('hidden');
-                document.getElementById('modalPlaceInput').value = '';
-            }, 200);
-        },
-
-        confirmAddPlace() {
-            const input = document.getElementById('modalPlaceInput');
-            const name = input.value.trim();
-            
-            if (name) {
-                if (this.state.places.some(p => p.toLowerCase() === name.toLowerCase())) {
-                    this.showToast("Waypoint already exists!", true);
-                    input.focus();
+            async saveStateToFirestore() {
+                if (!isAuthReady || !currentUserId) {
+                    this.showToast("Cannot save: User not authenticated.", true);
                     return;
                 }
                 
-                this.state.places.push(name);
-                this.saveState(); // Save state to trigger update
-                this.closeWaypointModal();
-            } else {
-                input.focus();
-            }
-        },
-
-        renderGrid() {
-            const table = document.getElementById('scheduleTable');
-            table.innerHTML = '';
-
-            const dateObjs = this.generateDates();
-            
-            // 1. Header Row
-            const thead = document.createElement('thead');
-            const headerRow = document.createElement('tr');
-            
-            const corner = document.createElement('th');
-            corner.className = "p-4 text-left min-w-[180px] bg-stone-100 sticky left-0 z-20 border-b-2 border-stone-300";
-            corner.innerHTML = '<span class="text-xs font-black uppercase tracking-widest text-stone-400">Explorer</span>';
-            headerRow.appendChild(corner);
-
-            dateObjs.forEach(d => {
-                const th = document.createElement('th');
-                th.className = "p-2 text-center min-w-[80px] border-b-2 border-stone-300 bg-stone-50";
+                const docRef = getScheduleDocRef(currentUserId);
+                const stateJson = JSON.stringify(this.state);
                 
-                const isWeekend = d.dayName === 'Sat' || d.dayName === 'Sun';
-                const textClass = isWeekend ? 'text-amber-600' : 'text-stone-500';
-                const bgClass = isWeekend ? 'bg-amber-50 rounded-t-md' : '';
+                try {
+                    // Use setDoc to overwrite the schedule document for the current user
+                    await setDoc(docRef, { state: stateJson, lastUpdated: new Date() });
+                    // No need for a toast here, as the onSnapshot listener handles updates.
+                } catch (error) {
+                    console.error("Firestore save error:", error);
+                    this.showToast("Failed to save schedule: " + error.message, true);
+                }
+            },
 
-                th.innerHTML = `
-                    <div class="flex flex-col py-1 ${bgClass}">
-                        <span class="text-[10px] font-bold uppercase tracking-wide ${textClass}">${d.dayName}</span>
-                        <span class="text-xl font-black text-stone-800 leading-none font-display">${d.dayNum}</span>
-                    </div>
-                `;
-                headerRow.appendChild(th);
-            });
-            thead.appendChild(headerRow);
-            table.appendChild(thead);
+            // --- CORE APPLICATION LOGIC ---
 
-            // 2. User Rows
-            const tbody = document.createElement('tbody');
-            
-            if (this.state.users.length === 0) {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td colspan="${this.state.days + 1}" class="p-12 text-center text-stone-400 italic bg-white">
-                    <div class="flex flex-col items-center gap-2">
-                        <i class="fa-regular fa-compass text-4xl opacity-20"></i>
-                        <span>No explorers yet. Join the expedition above!</span>
-                    </div>
-                </td>`;
-                tbody.appendChild(tr);
-            } else {
-                this.state.users.forEach((user, userIndex) => {
-                    const tr = document.createElement('tr');
-                    tr.className = "hover:bg-stone-50 transition-colors group border-b border-stone-100";
+            renderGrid() {
+                const gridContainer = document.getElementById('scheduleGrid');
+                const { days, users, places } = this.state;
+                let html = '<thead><tr class="bg-stone-300 text-stone-800 font-display font-bold">';
 
-                    // User Name Cell
-                    const nameTd = document.createElement('td');
-                    nameTd.className = "p-3 bg-white sticky left-0 z-10 border-r border-stone-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]";
-                    nameTd.innerHTML = `
-                        <div class="flex items-center justify-between group/item pl-2">
-                            <div class="font-bold text-stone-700 font-display text-sm">${user.name}</div>
-                            <button onclick="app.requestRemoveUser(${userIndex})" class="opacity-0 group-hover/item:opacity-100 text-stone-300 hover:text-red-500 transition px-2">
-                                <i class="fa-solid fa-trash-can text-xs"></i>
-                            </button>
-                        </div>
-                    `;
-                    tr.appendChild(nameTd);
+                // 1. Corner cell & User headers (COLUMNS)
+                html += '<th class="p-3 day-header-cell rounded-tl-lg border-r border-stone-400">Day / User</th>';
 
-                    // Schedule Cells
-                    user.schedule.forEach((placeIndex, dayIndex) => {
-                        const td = document.createElement('td');
-                        const isUnset = placeIndex === 0;
-                        const colorStyle = isUnset ? COLORS[0] : COLORS[placeIndex % COLORS.length];
-                        
-                        td.className = `p-1 border-r border-stone-100 cursor-pointer text-center h-14 relative bg-white`;
-                        
-                        const cellContent = document.createElement('div');
-                        cellContent.className = `w-full h-full rounded-md flex items-center justify-center text-xs font-bold transition-all transform hover:scale-[1.05] active:scale-95 shadow-sm ${colorStyle.bg} ${colorStyle.text}`;
-                        
-                        if (!isUnset) {
-                            cellContent.innerHTML = `<span>${this.state.places[placeIndex]}</span>`;
-                        } else {
-                            cellContent.innerHTML = '<span class="opacity-0 group-hover/cell:opacity-100 text-stone-300"><i class="fa-solid fa-chevron-down"></i></span>';
-                            td.classList.add('group/cell'); // Add group for hover effect
-                        }
+                // User headers
+                users.forEach((user, userIndex) => {
+                    html += `<th class="p-3 user-header-cell text-center border-l border-stone-200">
+                                <div class="flex items-center justify-between px-1">
+                                    <span class="truncate">${user.name}</span>
+                                    <button onclick="app.showConfirmationModal('Delete user ${user.name}? This will clear their schedule.', () => app.deleteUser(${userIndex}))" 
+                                            class="text-stone-500 hover:text-red-600 transition-colors ml-2 flex-shrink-0">
+                                        <i class="fas fa-times-circle text-sm"></i>
+                                    </button>
+                                </div>
+                             </th>`;
+                });
+                html += '</tr></thead>';
 
-                        td.onclick = (e) => this.openMenu(e, userIndex, dayIndex);
-                        
-                        td.appendChild(cellContent);
-                        tr.appendChild(td);
+                // 2. Day rows and schedule cells
+                html += '<tbody>';
+                days.forEach((day, dayIndex) => {
+                    html += `<tr>`;
+                    
+                    // Day name cell (STICKY ROW HEADER)
+                    html += `<th class="p-2 day-header-cell font-bold text-stone-700 border-b border-stone-300 text-left">
+                                ${day}
+                             </th>`;
+
+                    // Schedule cells (one cell per user for this day)
+                    users.forEach((user, userIndex) => {
+                        const placeIndex = user.schedule[dayIndex];
+                        const place = places[placeIndex];
+                        const bgColor = place.color;
+                        const textColor = place.isClear ? '#444' : '#fff'; // White text for non-clear places
+                        const shadow = place.isClear ? 'shadow-inner' : 'shadow-md';
+
+                        html += `<td 
+                                    class="p-1 schedule-cell text-center border-b border-stone-200 border-l border-stone-200 hover:ring-2 hover:ring-offset-1 hover:ring-blue-500 rounded-md transition-all duration-100 ${shadow} font-medium text-sm overflow-hidden"
+                                    style="background-color: ${bgColor}; color: ${textColor};"
+                                    onclick="app.openMenu(event, ${dayIndex}, ${userIndex})"
+                                >
+                                    <span class="block h-full flex items-center justify-center">${place.name}</span>
+                                </td>`;
                     });
 
-                    tbody.appendChild(tr);
+                    html += '</tr>';
                 });
-            }
+                html += '</tbody>';
 
-            table.appendChild(tbody);
-        },
-
-        generateDates() {
-            const dates = [];
-            // Ensure start date is treated as UTC to prevent timezone issues shifting the date
-            const start = new Date(this.state.startDate + 'T00:00:00');
-            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                gridContainer.innerHTML = html;
+                this.renderPlacesKey();
+            },
             
-            for (let i = 0; i < this.state.days; i++) {
-                const d = new Date(start);
-                d.setDate(start.getDate() + i);
-                dates.push({
-                    dayName: days[d.getDay()],
-                    dayNum: d.getDate(),
-                    fullDate: d.toISOString().split('T')[0]
+            renderPlacesKey() {
+                const keyContainer = document.getElementById('placesKey');
+                const { places } = this.state;
+                let html = '';
+
+                places.forEach((place, index) => {
+                    if (place.isClear) return; // Skip 'Free' from the visible key
+                    html += `<div class="flex items-center space-x-2 p-2 bg-stone-100 rounded-lg shadow-sm">
+                                <span class="block w-4 h-4 rounded-full" style="background-color: ${place.color};"></span>
+                                <span class="text-sm font-medium text-stone-700">${place.name}</span>
+                                <button onclick="app.showConfirmationModal('Delete place ${place.name}? Cells will be cleared.', () => app.deletePlace(${index}))" 
+                                    class="text-stone-400 hover:text-red-500 transition-colors ml-2" title="Delete Place">
+                                    <i class="fas fa-trash-alt text-xs"></i>
+                                </button>
+                            </div>`;
                 });
-            }
-            return dates;
-        },
+                keyContainer.innerHTML = html;
+            },
 
-        /* --- INTERACTION LOGIC --- */
+            // --- USER & PLACE MANAGEMENT ---
 
-        addUser() {
-            const input = document.getElementById('newUserName');
-            const name = input.value.trim();
-            if (!name) {
-                this.showToast("Please enter a name", true);
-                return;
-            }
-            if (this.state.users.some(u => u.name.toLowerCase() === name.toLowerCase())) {
-                this.showToast("Explorer already exists!", true);
-                return;
-            }
-            const emptySchedule = new Array(this.state.days).fill(0);
-            this.state.users.push({ name: name, schedule: emptySchedule });
-            input.value = '';
-            this.saveState();
-            this.showToast(`${name} joined!`);
-        },
+            addUser() {
+                const name = document.getElementById('userNameInput').value.trim();
+                if (!name) return this.showToast("User name cannot be empty.", true);
 
-        requestRemoveUser(index) {
-             this.openConfirmationModal({
-                title: `Remove ${this.state.users[index].name}?`,
-                message: `Are you sure you want to remove ${this.state.users[index].name} and all their scheduled locations from the map? This action cannot be undone.`,
-                confirmText: "Yes, Remove Explorer",
-                confirmColor: "bg-red-600 hover:bg-red-700",
-                callback: () => this.executeRemoveUser(index)
-            });
-        },
-
-        executeRemoveUser(index) {
-            const removedName = this.state.users[index].name;
-            this.state.users.splice(index, 1);
-            this.saveState();
-            this.showToast(`${removedName} removed!`);
-        },
-
-        /* --- DROPDOWN MENU LOGIC --- */
-
-        activeCell: null, // { userIndex, dayIndex }
-
-        openMenu(e, userIndex, dayIndex) {
-            if (!isAuthReady) {
-                this.showToast("Connection initializing. Please wait.", true);
-                return;
-            }
-            e.stopPropagation(); // Prevent document click from closing immediately
-            this.activeCell = { userIndex, dayIndex };
-            
-            const menu = document.getElementById('cellMenu');
-            const rect = e.currentTarget.getBoundingClientRect();
-            
-            // Generate Menu Content
-            menu.innerHTML = '';
-            
-            // Header (Date)
-            const date = this.generateDates()[dayIndex];
-            const header = document.createElement('div');
-            header.className = "px-4 py-2 border-b border-stone-100 text-[10px] font-bold uppercase tracking-widest text-stone-400 bg-stone-50/50 rounded-t-xl";
-            header.innerText = `${date.dayName}, ${date.dayNum}`;
-            menu.appendChild(header);
-
-            // Options
-            this.state.places.forEach((place, index) => {
-                const btn = document.createElement('button');
-                const isSelected = this.state.users[userIndex].schedule[dayIndex] === index;
-                const style = COLORS[index % COLORS.length];
+                // New user schedule length is based on days
+                const newSchedule = Array(this.state.days.length).fill(0); // Fill new user's schedule with 'Free' (index 0)
+                this.state.users.push({ name, schedule: newSchedule });
                 
-                btn.className = `w-full text-left px-4 py-2.5 text-sm font-medium hover:bg-stone-50 transition-colors flex items-center gap-3 ${isSelected ? 'bg-stone-50' : ''}`;
-                
-                let iconHtml = '';
-                if (index === 0) {
-                    iconHtml = `<div class="w-2.5 h-2.5 rounded-full border-2 border-stone-300"></div>`;
-                } else {
-                    iconHtml = `<div class="w-2.5 h-2.5 rounded-full ${style.bg} border ${style.border}"></div>`;
+                this.closeAddUserModal();
+                this.saveStateToFirestore();
+            },
+
+            deleteUser(userIndex) {
+                if (this.state.users.length === 1) {
+                    this.showToast("You must have at least one user.", true);
+                    return;
                 }
+                this.state.users.splice(userIndex, 1);
+                this.saveStateToFirestore();
+            },
 
-                btn.innerHTML = `
-                    ${iconHtml}
-                    <span class="${index === 0 ? 'text-stone-400 italic' : 'text-stone-700'}">${index === 0 ? 'Clear Selection' : place}</span>
-                    ${isSelected ? '<i class="fa-solid fa-check text-emerald-500 ml-auto text-xs"></i>' : ''}
-                `;
+            addPlace() {
+                const name = document.getElementById('placeNameInput').value.trim();
+                const color = document.getElementById('placeColorInput').value;
+                if (!name) return this.showToast("Place name cannot be empty.", true);
+
+                this.state.places.push({ name, color });
                 
-                btn.onclick = () => this.selectPlace(index);
-                menu.appendChild(btn);
-            });
+                this.closeAddPlaceModal();
+                this.saveStateToFirestore();
+            },
 
-            // Positioning
-            menu.classList.remove('hidden');
+            deletePlace(placeIndex) {
+                if (placeIndex === 0) {
+                    this.showToast("The 'Free' place cannot be deleted.", true);
+                    return;
+                }
+                
+                // 1. Clear all cells that had this place
+                this.state.users.forEach(user => {
+                    user.schedule = user.schedule.map(pIndex => 
+                        pIndex === placeIndex ? 0 : (pIndex > placeIndex ? pIndex - 1 : pIndex)
+                    );
+                });
+
+                // 2. Remove the place
+                this.state.places.splice(placeIndex, 1);
+                this.showToast("Place deleted and schedule updated.");
+                this.saveStateToFirestore();
+            },
+
+            // --- CELL INTERACTION ---
+
+            // Now takes dayIndex first, then userIndex
+            openMenu(event, dayIndex, userIndex) {
+                this.activeCell = { dayIndex, userIndex };
+                const menu = document.getElementById('selectionMenu');
+                const optionsContainer = document.getElementById('placeOptions');
+                
+                // Position the menu
+                menu.style.left = `${event.pageX}px`;
+                menu.style.top = `${event.pageY}px`;
+                
+                // Render options
+                let optionsHtml = '';
+                this.state.places.forEach((place, index) => {
+                    if (place.isClear) return;
+                    optionsHtml += `
+                        <button onclick="app.applySchedule(${index})" 
+                                class="w-full text-left p-2 rounded-lg hover:bg-stone-100 transition-colors flex items-center space-x-2">
+                            <span class="block w-4 h-4 rounded-full shadow-md" style="background-color: ${place.color};"></span>
+                            <span class="text-sm font-medium text-stone-700">${place.name}</span>
+                        </button>`;
+                });
+                optionsContainer.innerHTML = optionsHtml;
+                
+                menu.classList.remove('hidden');
+                
+                // Add a click handler to close the menu when clicking outside
+                document.addEventListener('click', this.closeMenuHandler, true);
+            },
+
+            closeMenuHandler(event) {
+                const menu = document.getElementById('selectionMenu');
+                // Check if the click was outside the menu and not on a cell
+                if (menu && !menu.contains(event.target) && !event.target.classList.contains('schedule-cell')) {
+                    app.closeMenu();
+                }
+            },
+
+            closeMenu() {
+                document.getElementById('selectionMenu').classList.add('hidden');
+                document.removeEventListener('click', this.closeMenuHandler, true);
+                this.activeCell = { dayIndex: -1, userIndex: -1 };
+            },
+
+            applySchedule(placeIndex) {
+                if (this.activeCell.dayIndex === -1) return;
+                const { dayIndex, userIndex } = this.activeCell;
+                
+                // Schedule is stored in user.schedule[dayIndex]
+                this.state.users[userIndex].schedule[dayIndex] = placeIndex;
+                
+                this.saveStateToFirestore();
+                this.closeMenu();
+            },
+
+            clearCell() {
+                // 'Free' is always index 0
+                this.applySchedule(0);
+            },
             
-            // Simple positioning logic
-            const menuWidth = 192; // w-48
-            const menuHeight = Math.min(this.state.places.length * 40 + 40, 300); 
+            resetSchedule() {
+                this.state = DEFAULT_STATE;
+                this.showToast("Schedule reset to default state.");
+                this.saveStateToFirestore();
+            },
+
+            loadInitialState() {
+                // Fallback for failed authentication, using default state
+                this.state = DEFAULT_STATE;
+            },
+
+            // --- UI/MODAL UTILITIES ---
+
+            showAddUserModal() {
+                document.getElementById('userNameInput').value = '';
+                document.getElementById('userModal').classList.remove('hidden');
+            },
+            closeAddUserModal() {
+                document.getElementById('userModal').classList.add('hidden');
+            },
+
+            showAddPlaceModal() {
+                document.getElementById('placeNameInput').value = '';
+                document.getElementById('placeColorInput').value = '#65a30d'; // Default color
+                document.getElementById('placeModal').classList.remove('hidden');
+            },
+            closeAddPlaceModal() {
+                document.getElementById('placeModal').classList.add('hidden');
+            },
+
+            /* --- CONFIRMATION MODAL --- */
+
+            showConfirmationModal(message, action) {
+                document.getElementById('confirmMessage').innerText = message;
+                this.confirmAction = action;
+                document.getElementById('confirmationModal').classList.remove('hidden');
+            },
+
+            closeConfirmationModal() {
+                document.getElementById('confirmationModal').classList.add('hidden');
+                this.confirmAction = null;
+            },
             
-            // Set position based on available space
-            const spaceBelow = window.innerHeight - rect.bottom;
-            const spaceRight = window.innerWidth - rect.left;
+            acceptConfirmation() {
+                if (this.confirmAction) {
+                    this.confirmAction();
+                }
+                this.closeConfirmationModal();
+                this.confirmAction = null;
+            },
             
-            if (spaceBelow < menuHeight && rect.top > menuHeight) {
-                // Show above
-                menu.style.top = `${rect.top - menu.offsetHeight}px`;
-                menu.style.transformOrigin = 'bottom left';
-            } else {
-                // Show below
-                menu.style.top = `${rect.bottom + 5}px`;
-                menu.style.transformOrigin = 'top left';
+            rejectConfirmation() {
+                this.closeConfirmationModal();
+            },
+
+            /* --- TOAST LOGIC --- */
+
+            showToast(msg, isError = false) {
+                const toast = document.getElementById('toast');
+                const msgSpan = document.getElementById('toastMsg');
+                const icon = toast.querySelector('i');
+                
+                // Change colors and icons based on error status
+                if (isError) {
+                    toast.classList.remove('bg-emerald-900', 'border-emerald-700');
+                    toast.classList.add('bg-red-800', 'border-red-600');
+                    icon.className = "fa-solid fa-circle-exclamation text-red-300";
+                } else {
+                    toast.classList.remove('bg-red-800', 'border-red-600');
+                    toast.classList.add('bg-emerald-900', 'border-emerald-700');
+                    icon.className = "fa-solid fa-circle-check text-emerald-400";
+                }
+                
+                msgSpan.innerText = msg;
+                
+                // Show toast
+                toast.classList.remove('translate-y-24');
+                
+                // Hide toast after 3 seconds
+                setTimeout(() => {
+                    toast.classList.add('translate-y-24');
+                }, 3000);
             }
-            
-            if (spaceRight < menuWidth) {
-                // Align right
-                menu.style.left = `${rect.right - menuWidth}px`;
-                menu.style.transformOrigin = menu.style.transformOrigin.replace('left', 'right');
-            } else {
-                // Align left
-                menu.style.left = `${rect.left}px`;
-            }
+        };
 
-            // Animate in
-            menu.style.opacity = '0';
-            menu.style.transform = 'scale(0.95)';
-            requestAnimationFrame(() => {
-                menu.style.opacity = '1';
-                menu.style.transform = 'scale(1)';
-            });
-        },
-
-        closeMenu() {
-            const menu = document.getElementById('cellMenu');
-            menu.style.opacity = '0';
-            menu.style.transform = 'scale(0.95)';
-            setTimeout(() => {
-                menu.classList.add('hidden');
-                this.activeCell = null;
-            }, 200);
-        },
-
-        selectPlace(placeIndex) {
-            if (!this.activeCell) return;
-            const { userIndex, dayIndex } = this.activeCell;
-            
-            // Only update if the selection is different
-            if (this.state.users[userIndex].schedule[dayIndex] !== placeIndex) {
-                 this.state.users[userIndex].schedule[dayIndex] = placeIndex;
-                 this.saveState();
-            }
-            
-            this.closeMenu();
-        },
-
-        copyLink() {
-            if (!expeditionRef) {
-                this.showToast("Please create an expedition first.", true);
-                return;
-            }
-            
-            const url = window.location.href;
-            navigator.clipboard.writeText(url).then(() => {
-                this.showToast("Map link copied!");
-            }).catch(err => {
-                this.showToast("Failed to copy link.", true);
-            });
-        },
-
-        /* --- CONFIRMATION MODAL LOGIC (Replaces native confirm/alert) --- */
-
-        openConfirmationModal({ title, message, confirmText, confirmColor, callback }) {
-            this.confirmAction = callback;
-            
-            const modal = document.getElementById('confirmationModal');
-            const content = document.getElementById('confirmationModalContent');
-            const confirmBtn = document.getElementById('confirmBtn');
-
-            document.getElementById('confirmTitle').innerText = title;
-            document.getElementById('confirmMessage').innerText = message;
-            
-            // Reset button style
-            confirmBtn.className = confirmBtn.className.replace(/bg-red-600 hover:bg-red-700/, '');
-            
-            // Set new button text and color
-            confirmBtn.innerText = confirmText;
-            confirmBtn.classList.add(...confirmColor.split(' '));
-            
-            modal.classList.remove('hidden');
-            requestAnimationFrame(() => {
-                modal.classList.remove('opacity-0');
-                content.classList.remove('scale-95');
-                content.classList.add('scale-100');
-            });
-        },
-
-        closeConfirmationModal() {
-            const modal = document.getElementById('confirmationModal');
-            const content = document.getElementById('confirmationModalContent');
-
-            modal.classList.add('opacity-0');
-            content.classList.remove('scale-100');
-            content.classList.add('scale-95');
-
-            setTimeout(() => {
-                modal.classList.add('hidden');
-            }, 200);
-        },
-
-        executeConfirmation() {
-            if (this.confirmAction) {
-                this.confirmAction();
-            }
-            this.closeConfirmationModal();
-            this.confirmAction = null;
-        },
-        
-        rejectConfirmation() {
-            this.closeConfirmationModal();
-        },
-
-        /* --- TOAST LOGIC --- */
-
-        showToast(msg, isError = false) {
-            const toast = document.getElementById('toast');
-            const msgSpan = document.getElementById('toastMsg');
-            const icon = toast.querySelector('i');
-            
-            // Change colors and icons based on error status
-            if (isError) {
-                toast.classList.remove('bg-emerald-900', 'border-emerald-700');
-                toast.classList.add('bg-red-800', 'border-red-600');
-                icon.className = "fa-solid fa-circle-exclamation text-red-300";
-            } else {
-                toast.classList.remove('bg-red-800', 'border-red-600');
-                toast.classList.add('bg-emerald-900', 'border-emerald-700');
-                icon.className = "fa-solid fa-circle-check text-emerald-400";
-            }
-            
-            msgSpan.innerText = msg;
-            
-            // Show toast
-            toast.classList.remove('translate-y-24');
-            
-            // Hide toast after 3 seconds
-            setTimeout(() => {
-                toast.classList.add('translate-y-24');
-            }, 3000);
-        }
-    };
-
-    window.onload = () => app.init();
-</script>
+    </script>
 </body>
 </html>
