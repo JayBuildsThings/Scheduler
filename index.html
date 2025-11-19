@@ -3,530 +3,577 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scheduler - Expedition Planner</title>
-    
+    <title>Expedition Scheduler</title>
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Google Fonts -->
+
+    <!-- Google Fonts: Outfit for display, Fira Sans for body -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Fira+Sans:wght@400;500&display=swap" rel="stylesheet">
-    
-    <!-- FontAwesome -->
+
+    <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- LZ-String for URL Compression (Necessary for storing large data in the URL hash) -->
+    <!-- LZ-String for URL Compression (Key for saving/loading state) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 
     <style>
         body {
             font-family: 'Fira Sans', sans-serif;
-            background-color: #f5f5f4; /* Stone-100 */
+            background-color: #f0f4f8; /* Light blue-gray for a clean look */
         }
         h1, h2, h3, button, .font-display {
             font-family: 'Outfit', sans-serif;
         }
-        /* Topography pattern for background aesthetic */
         .topo-bg {
-            background-color: #f5f5f4;
-            background-image: 
+            /* Subtle topographic background pattern */
+            background-color: #f0f4f8;
+            background-image:
                 radial-gradient(#d6d3d1 1px, transparent 1px),
-                radial-gradient(#d6d3d1 1px, #f5f5f4 1px);
-            background-size: 40px 40px;
-            background-position: 0 0, 20px 20px;
+                radial-gradient(#d6d3d1 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-position: 0 0, 10px 10px;
         }
-
-        /* Custom cell styles for clear visibility */
-        .schedule-cell {
-            min-width: 120px;
-            max-width: 120px;
-            height: 60px;
+        .grid-header-col {
+            min-width: 150px;
+        }
+        .grid-cell {
+            min-width: 100px; /* Ensures cell size is readable */
+            min-height: 50px;
             cursor: pointer;
-            transition: background-color 0.1s;
         }
-        .schedule-cell:hover {
-            opacity: 0.9;
-        }
-        /* User header cell needs more width for names */
-        .user-header-cell {
-            min-width: 120px;
-            max-width: 120px;
-        }
-        /* Day header cell needs to be sticky */
-        .day-header-cell {
-            min-width: 80px;
-            max-width: 80px;
-        }
-
-        /* Fix the user header bar for horizontal scrolling */
-        .schedule-scroll thead th {
-            z-index: 10;
-        }
-        /* Fix the Day/Time header cell for vertical sticking */
-        .schedule-scroll tbody th {
-            position: sticky;
-            left: 0;
-            z-index: 5;
-            background-color: #e7e5e4; /* Stone-200 */
-        }
-        /* Fix the corner cell */
-        .schedule-scroll thead th:first-child {
-            position: sticky;
-            left: 0;
-            z-index: 20;
-            background-color: #d6d3d1; /* Stone-300 */
-        }
-        
     </style>
 </head>
-<body class="topo-bg min-h-screen">
 
-    <div id="app" class="p-4 sm:p-8 flex flex-col items-center">
-        <!-- Header -->
-        <header class="w-full max-w-5xl mb-8 text-center">
-            <h1 class="font-display text-4xl sm:text-5xl font-extrabold text-stone-800 tracking-tighter">Expedition Scheduler</h1>
-            <p class="text-stone-600 mt-2 text-lg">Plan your group's weekly schedule and activities.</p>
-            <div id="user-info" class="mt-4 text-sm text-stone-500">
-                <!-- Instructions for sharing -->
-                <button onclick="app.copyLink()" class="flex items-center mx-auto space-x-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
-                    <i class="fas fa-share-alt"></i>
-                    <span class="font-display">Copy Shareable Link</span>
+<body class="p-4 sm:p-8 topo-bg min-h-screen">
+    <div id="app" class="max-w-7xl mx-auto">
+
+        <!-- Header and Controls -->
+        <header class="mb-8 p-6 bg-white rounded-xl shadow-lg border-b-4 border-indigo-500">
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-800 mb-2 font-display">Expedition Scheduler</h1>
+            <p class="text-gray-500 mb-4">Plan user schedules across multiple days and destinations.</p>
+
+            <div class="flex flex-wrap gap-3">
+                <button onclick="app.copyLink()"
+                    class="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-150 ease-in-out">
+                    <i class="fa-solid fa-link"></i>
+                    <span>Copy Shareable Link</span>
                 </button>
-                <p class="mt-2 text-xs">Note: Changes are saved to the URL. Use the button above to share your latest schedule.</p>
+                <button onclick="app.showConfirmation('Are you sure you want to reset ALL data? This cannot be undone.', app.resetState.bind(app))"
+                    class="flex items-center space-x-2 px-4 py-2 bg-red-500 text-white font-semibold rounded-lg shadow-md hover:bg-red-600 transition duration-150 ease-in-out">
+                    <i class="fa-solid fa-trash-can"></i>
+                    <span>Reset All</span>
+                </button>
             </div>
         </header>
 
-        <!-- Main Content Area -->
-        <main class="w-full max-w-5xl bg-white shadow-xl rounded-xl p-4 sm:p-6">
-            
-            <!-- Management Bar -->
-            <div class="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
-                <div class="flex space-x-2">
-                    <button onclick="app.showAddUserModal()" class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
-                        <i class="fas fa-user-plus"></i>
-                        <span class="font-display">Add User</span>
-                    </button>
-                    <button onclick="app.showAddPlaceModal()" class="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
-                        <i class="fas fa-map-marker-alt"></i>
-                        <span class="font-display">Add Place</span>
-                    </button>
-                </div>
-                <div class="flex space-x-2">
-                    <button onclick="app.showConfirmationModal('Are you sure you want to reset the schedule? This cannot be undone.', app.resetSchedule)" class="flex items-center space-x-2 bg-rose-500 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
-                        <i class="fas fa-trash-alt"></i>
-                        <span class="font-display">Reset</span>
-                    </button>
+        <main class="grid lg:grid-cols-3 gap-8">
+            <!-- Left Column: The Schedule Grid -->
+            <div class="lg:col-span-2 p-6 bg-white rounded-xl shadow-lg">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Schedule Grid</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200" id="scheduleGrid">
+                        <!-- Grid content will be rendered here -->
+                    </table>
                 </div>
             </div>
 
-            <!-- Schedule Grid Container (Horizontal scroll now handles users, not days) -->
-            <div class="overflow-x-auto schedule-scroll shadow-inner rounded-lg border border-stone-200">
-                <table id="scheduleGrid" class="w-full whitespace-nowrap">
-                    <!-- Grid content will be rendered here -->
-                </table>
+            <!-- Right Column: User and Place Management -->
+            <div class="space-y-8">
+                <!-- User Management Card -->
+                <div class="p-6 bg-white rounded-xl shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-700 flex justify-between items-center">
+                        Users
+                        <button onclick="app.addUser()" title="Add New User"
+                            class="text-green-500 hover:text-green-700 transition duration-150">
+                            <i class="fa-solid fa-circle-plus fa-lg"></i>
+                        </button>
+                    </h2>
+                    <ul id="userList" class="space-y-3">
+                        <!-- User list will be rendered here -->
+                    </ul>
+                </div>
+
+                <!-- Place Management Card -->
+                <div class="p-6 bg-white rounded-xl shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-700 flex justify-between items-center">
+                        Places
+                        <button onclick="app.addPlace()" title="Add New Place"
+                            class="text-green-500 hover:text-green-700 transition duration-150">
+                            <i class="fa-solid fa-circle-plus fa-lg"></i>
+                        </button>
+                    </h2>
+                    <ul id="placeList" class="space-y-3">
+                        <!-- Place list will be rendered here -->
+                    </ul>
+                </div>
+
+                <!-- Day Management Card -->
+                <div class="p-6 bg-white rounded-xl shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-700 flex justify-between items-center">
+                        Days
+                        <button onclick="app.addDay()" title="Add New Day"
+                            class="text-green-500 hover:text-green-700 transition duration-150">
+                            <i class="fa-solid fa-circle-plus fa-lg"></i>
+                        </button>
+                    </h2>
+                    <ul id="dayList" class="space-y-3">
+                        <!-- Day list will be rendered here -->
+                    </ul>
+                </div>
             </div>
         </main>
-        
-        <!-- Places Key -->
-        <section class="w-full max-w-5xl mt-8 p-4 sm:p-6 bg-white shadow-xl rounded-xl">
-            <h2 class="font-display text-2xl font-bold text-stone-700 mb-4">Places Key</h2>
-            <div id="placesKey" class="flex flex-wrap gap-3">
-                <!-- Places will be rendered here -->
-            </div>
-        </section>
-
     </div>
 
-    <!-- ----------------- MODALS ----------------- -->
+    <!-- --- Floating Components --- -->
 
-    <!-- Modal for Adding/Editing User -->
-    <div id="userModal" class="fixed inset-0 bg-stone-900 bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-            <h3 class="font-display text-2xl font-bold text-stone-800 mb-4">Add New User</h3>
-            <input type="text" id="userNameInput" placeholder="Enter user name" class="w-full p-3 border border-stone-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 mb-4">
-            <div class="flex justify-end space-x-3">
-                <button onclick="app.closeAddUserModal()" class="bg-stone-300 hover:bg-stone-400 text-stone-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
-                <button onclick="app.addUser()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Add User</button>
-            </div>
+    <!-- Place Selection Menu (Context Menu) -->
+    <div id="placeMenu" class="fixed hidden z-50 p-2 bg-white rounded-lg shadow-xl border border-gray-200 transform -translate-x-1/2 -translate-y-1/2 transition duration-100" style="top: 0; left: 0;">
+        <div id="menuContent">
+            <!-- Place options rendered here -->
         </div>
-    </div>
-
-    <!-- Modal for Adding/Editing Place -->
-    <div id="placeModal" class="fixed inset-0 bg-stone-900 bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-            <h3 class="font-display text-2xl font-bold text-stone-800 mb-4">Add New Place</h3>
-            <input type="text" id="placeNameInput" placeholder="Enter place name (e.g., Mountain A)" class="w-full p-3 border border-stone-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 mb-4">
-            <input type="color" id="placeColorInput" value="#65a30d" class="w-full h-10 border border-stone-300 rounded-lg mb-4">
-            <div class="flex justify-end space-x-3">
-                <button onclick="app.closeAddPlaceModal()" class="bg-stone-300 hover:bg-stone-400 text-stone-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
-                <button onclick="app.addPlace()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg">Add Place</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Menu for Cell Selection -->
-    <div id="selectionMenu" class="absolute bg-white rounded-xl shadow-2xl p-3 z-40 border border-stone-200 hidden">
-        <h4 class="font-display text-lg font-semibold text-stone-700 mb-2 border-b pb-1">Set Activity</h4>
-        <div id="placeOptions" class="flex flex-col space-y-1">
-            <!-- Options dynamically added here -->
-        </div>
-        <button onclick="app.clearCell()" class="w-full mt-3 bg-red-100 hover:bg-red-200 text-red-700 font-medium py-1 px-2 rounded-lg text-sm transition-colors">
-            Clear
-        </button>
     </div>
 
     <!-- Confirmation Modal -->
-    <div id="confirmationModal" class="fixed inset-0 bg-stone-900 bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <p id="confirmMessage" class="text-stone-700 mb-6 text-center">Are you sure?</p>
-            <div class="flex justify-center space-x-4">
-                <button onclick="app.rejectConfirmation()" class="bg-stone-300 hover:bg-stone-400 text-stone-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
-                <button onclick="app.acceptConfirmation()" class="bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-lg">Confirm</button>
+    <div id="confirmationModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-[100] hidden">
+        <div class="bg-white p-6 rounded-lg shadow-2xl max-w-sm mx-4">
+            <h3 class="text-xl font-display font-bold mb-4 text-gray-800">Confirm Action</h3>
+            <p id="confirmMessage" class="mb-6 text-gray-600"></p>
+            <div class="flex justify-end space-x-3">
+                <button onclick="app.rejectConfirmation()"
+                    class="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition">
+                    Cancel
+                </button>
+                <button onclick="app.acceptConfirmation()"
+                    class="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition">
+                    Confirm
+                </button>
             </div>
         </div>
     </div>
 
     <!-- Toast Notification -->
-    <div id="toast" class="fixed bottom-0 left-1/2 transform -translate-x-1/2 translate-y-24 transition-transform duration-500 ease-in-out mb-6 p-3 bg-emerald-900 border border-emerald-700 text-white rounded-xl shadow-lg flex items-center space-x-3 z-50">
-        <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400"></i>
+    <div id="toast" class="fixed bottom-0 left-1/2 -translate-x-1/2 mb-4 p-4 flex items-center space-x-3 bg-gray-800 text-white rounded-xl shadow-lg border border-gray-700 transition duration-300 transform translate-y-24 z-50">
+        <i class="fa-solid fa-circle-check text-emerald-400"></i>
         <span id="toastMsg" class="font-medium">Action successful!</span>
     </div>
 
-    <!-- ----------------- JAVASCRIPT LOGIC ----------------- -->
-
-    <script type="module">
-        // ----------------- APPLICATION LOGIC -----------------
-
-        // Default application state
-        const DEFAULT_STATE = {
-            users: [
-                { name: "Joe", schedule: [0, 0, 0, 0, 0, 0, 0] },
-                { name: "Jane", schedule: [1, 1, 1, 1, 1, 1, 1] },
-            ],
-            places: [
-                { name: "Free", color: "#6b7280", isClear: true }, // Index 0: Default clear state
-                { name: "The Lake", color: "#3b82f6" },
-                { name: "Mountain Trail", color: "#10b981" },
-                { name: "Town Visit", color: "#f59e0b" },
-            ],
-            days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-        };
-
-        window.app = {
-            // State initialization
-            state: DEFAULT_STATE,
-            // activeCell now tracks (Day Index, User Index)
-            activeCell: { dayIndex: -1, userIndex: -1 }, 
+    <script>
+        const app = {
+            // --- STATE MANAGEMENT ---
+            state: {
+                users: [
+                    { id: 1, name: "User 1", color: "#6366f1", schedule: [] }, // Indigo-500
+                ],
+                places: [
+                    { id: 101, name: "Base Camp", color: "#22c55e" }, // Emerald-500
+                    { id: 102, name: "Exploration Zone Alpha", color: "#f97316" }, // Orange-500
+                ],
+                days: [
+                    { id: 201, name: "Day 1" },
+                    { id: 202, name: "Day 2" },
+                ],
+            },
+            activeCell: null,
             confirmAction: null,
 
-            // --- URL/PERSISTENCE METHODS ---
+            // --- INITIALIZATION ---
+            init() {
+                this.loadFromURL();
+                this.renderAll();
 
-            // Load state from URL hash using LZ-String decompression
-            loadInitialState() {
+                // Listen for URL changes (e.g., back/forward button)
+                window.addEventListener('popstate', () => this.loadFromURL());
+            },
+
+            // --- PERSISTENCE (URL HASH) ---
+
+            loadFromURL() {
                 const hash = window.location.hash.substring(1);
                 if (hash) {
                     try {
-                        // Decompress the string
                         const decompressed = LZString.decompressFromEncodedURIComponent(hash);
                         if (decompressed) {
                             const loadedState = JSON.parse(decompressed);
-                            // Basic validation to ensure structure is correct
-                            if (loadedState && loadedState.users && loadedState.places) {
-                                this.state = loadedState;
-                                this.showToast("Schedule loaded from URL!");
-                                return;
-                            }
+                            this.state = loadedState;
+                            this.renderAll();
+                            this.showToast("State loaded from URL!");
+                            return;
                         }
                     } catch (e) {
                         console.error("Error loading state from URL:", e);
-                        this.showToast("Corrupted schedule data in URL. Starting fresh.", true);
+                        // If loading fails, fall back to default/current state
                     }
                 }
-                // If no hash or load failed, use default state
-                this.state = DEFAULT_STATE;
+                // Initialize schedules to match the current number of days
+                this.ensureScheduleSize();
             },
 
-            // Save state to URL hash using LZ-String compression
             updateURL() {
-                const json = JSON.stringify(this.state);
-                // Compress the JSON string
+                // Remove the schedule content from user objects to keep the URL smaller,
+                // but only if the schedule is all 0s (default place)
+                const stateToCompress = JSON.parse(JSON.stringify(this.state)); // Deep copy
+                
+                // Ensure schedule length is correct before saving
+                this.ensureScheduleSize(stateToCompress);
+
+                const json = JSON.stringify(stateToCompress);
                 const compressed = LZString.compressToEncodedURIComponent(json);
-                // Update the URL hash without reloading the page
                 history.replaceState(null, null, '#' + compressed);
             },
 
-            // Copy the current URL (which contains the schedule) to the clipboard
             copyLink() {
-                this.updateURL(); // Ensure URL is up-to-date before copying
+                this.updateURL();
+                // Ensure the URL reflects the latest state before copying
                 const url = window.location.href;
-                navigator.clipboard.writeText(url).then(() => {
-                    this.showToast("Shareable link copied to clipboard!");
-                }).catch(err => {
-                    // Fallback for older browsers or restricted environments
-                    this.showToast("Failed to copy link. Please copy the URL manually.", true);
-                    console.error("Copy failed:", err);
+
+                // Use the older execCommand fallback for better cross-platform compatibility in some environments
+                try {
+                    const tempInput = document.createElement('textarea');
+                    tempInput.value = url;
+                    document.body.appendChild(tempInput);
+                    tempInput.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tempInput);
+                    this.showToast("Shareable link copied!");
+                } catch (err) {
+                    // Fallback to clipboard API if available, or show error
+                    navigator.clipboard.writeText(url).then(() => {
+                        this.showToast("Shareable link copied!");
+                    }).catch(err => {
+                        this.showToast("Failed to copy link. Please copy from the address bar.", true);
+                    });
+                }
+            },
+
+            resetState() {
+                this.state = {
+                    users: [
+                        { id: 1, name: "User 1", color: "#6366f1", schedule: [] },
+                    ],
+                    places: [
+                        { id: 101, name: "Base Camp", color: "#22c55e" },
+                        { id: 102, name: "Exploration Zone Alpha", color: "#f97316" },
+                        { id: 103, name: "Rest & Refuel", color: "#eab308" }
+                    ],
+                    days: [
+                        { id: 201, name: "Day 1" },
+                        { id: 202, name: "Day 2" },
+                        { id: 203, name: "Day 3" }
+                    ],
+                };
+                this.ensureScheduleSize();
+                this.updateURL();
+                this.renderAll();
+                this.showToast("All data reset to defaults.");
+            },
+
+            // --- UTILITIES ---
+
+            generateId() {
+                return Date.now() + Math.floor(Math.random() * 1000);
+            },
+
+            // Ensures every user's schedule array is the same length as the days array
+            ensureScheduleSize(state = this.state) {
+                const daysCount = state.days.length;
+                const defaultPlaceId = state.places[0] ? state.places[0].id : 0;
+
+                state.users.forEach(user => {
+                    while (user.schedule.length < daysCount) {
+                        user.schedule.push(defaultPlaceId);
+                    }
+                    // Trim schedules if days were removed
+                    user.schedule.length = daysCount;
                 });
             },
 
-            // --- CORE APPLICATION LOGIC ---
+            getPlaceById(id) {
+                return this.state.places.find(p => p.id === id);
+            },
+
+            // --- RENDERING ---
+
+            renderAll() {
+                this.renderGrid();
+                this.renderUserList();
+                this.renderPlaceList();
+                this.renderDayList();
+            },
 
             renderGrid() {
-                const gridContainer = document.getElementById('scheduleGrid');
-                const { days, users, places } = this.state;
-                let html = '<thead><tr class="bg-stone-300 text-stone-800 font-display font-bold">';
+                const gridTable = document.getElementById('scheduleGrid');
+                if (!gridTable) return;
 
-                // 1. Corner cell & User headers (COLUMNS)
-                html += '<th class="p-3 day-header-cell rounded-tl-lg border-r border-stone-400">Day / User</th>';
+                const days = this.state.days;
+                const users = this.state.users;
+                let html = '';
 
-                // User headers
-                users.forEach((user, userIndex) => {
-                    html += `<th class="p-3 user-header-cell text-center border-l border-stone-200">
-                                <div class="flex items-center justify-between px-1">
-                                    <span class="truncate">${user.name}</span>
-                                    <button onclick="app.showConfirmationModal('Delete user ${user.name}? This will clear their schedule.', () => app.deleteUser(${userIndex}))" 
-                                            class="text-stone-500 hover:text-red-600 transition-colors ml-2 flex-shrink-0">
-                                        <i class="fas fa-times-circle text-sm"></i>
-                                    </button>
-                                </div>
-                             </th>`;
+                // Table Header (Days)
+                html += '<thead><tr class="bg-gray-100">';
+                html += '<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider grid-header-col">User</th>';
+                days.forEach(day => {
+                    html += `<th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">${day.name}</th>`;
                 });
                 html += '</tr></thead>';
 
-                // 2. Day rows and schedule cells
-                html += '<tbody>';
-                days.forEach((day, dayIndex) => {
+                // Table Body (Users and Schedules)
+                html += '<tbody class="divide-y divide-gray-200">';
+                users.forEach((user, userIndex) => {
                     html += `<tr>`;
-                    
-                    // Day name cell (STICKY ROW HEADER)
-                    html += `<th class="p-2 day-header-cell font-bold text-stone-700 border-b border-stone-300 text-left">
-                                ${day}
-                             </th>`;
+                    // User Name Column
+                    html += `<td class="px-4 py-2 font-semibold text-gray-700 grid-header-col bg-gray-50">${user.name}</td>`;
 
-                    // Schedule cells (one cell per user for this day)
-                    users.forEach((user, userIndex) => {
-                        const placeIndex = user.schedule[dayIndex];
-                        const place = places[placeIndex];
-                        const bgColor = place.color;
-                        const textColor = place.isClear ? '#444' : '#fff'; // White text for non-clear places
-                        const shadow = place.isClear ? 'shadow-inner' : 'shadow-md';
+                    // Schedule Cells
+                    days.forEach((day, dayIndex) => {
+                        const placeId = user.schedule[dayIndex];
+                        const place = this.getPlaceById(placeId);
+                        const placeColor = place ? place.color : '#cbd5e1'; // slate-300
+                        const placeName = place ? place.name : 'Unassigned';
 
-                        html += `<td 
-                                    class="p-1 schedule-cell text-center border-b border-stone-200 border-l border-stone-200 hover:ring-2 hover:ring-offset-1 hover:ring-blue-500 rounded-md transition-all duration-100 ${shadow} font-medium text-sm overflow-hidden"
-                                    style="background-color: ${bgColor}; color: ${textColor};"
-                                    onclick="app.openMenu(event, ${dayIndex}, ${userIndex})"
-                                >
-                                    <span class="block h-full flex items-center justify-center">${place.name}</span>
-                                </td>`;
+                        html += `
+                            <td class="px-1 py-1 text-center" onclick="app.openMenu(${userIndex}, ${dayIndex}, event)">
+                                <div class="grid-cell p-2 rounded-lg shadow-sm font-medium text-sm transition duration-150 hover:shadow-md border border-transparent"
+                                     style="background-color: ${placeColor}; color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.4);">
+                                    ${placeName}
+                                </div>
+                            </td>
+                        `;
                     });
-
-                    html += '</tr>';
+                    html += `</tr>`;
                 });
                 html += '</tbody>';
 
-                gridContainer.innerHTML = html;
-                this.renderPlacesKey();
-            },
-            
-            renderPlacesKey() {
-                const keyContainer = document.getElementById('placesKey');
-                const { places } = this.state;
-                let html = '';
-
-                places.forEach((place, index) => {
-                    if (place.isClear) return; // Skip 'Free' from the visible key
-                    html += `<div class="flex items-center space-x-2 p-2 bg-stone-100 rounded-lg shadow-sm">
-                                <span class="block w-4 h-4 rounded-full" style="background-color: ${place.color};"></span>
-                                <span class="text-sm font-medium text-stone-700">${place.name}</span>
-                                <button onclick="app.showConfirmationModal('Delete place ${place.name}? Cells will be cleared.', () => app.deletePlace(${index}))" 
-                                    class="text-stone-400 hover:text-red-500 transition-colors ml-2" title="Delete Place">
-                                    <i class="fas fa-trash-alt text-xs"></i>
-                                </button>
-                            </div>`;
-                });
-                keyContainer.innerHTML = html;
+                gridTable.innerHTML = html;
             },
 
-            // --- USER & PLACE MANAGEMENT ---
+            renderUserList() {
+                const userList = document.getElementById('userList');
+                if (!userList) return;
+
+                userList.innerHTML = this.state.users.map((user, index) => `
+                    <li class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border">
+                        <i class="fa-solid fa-user-astronaut text-indigo-500"></i>
+                        <input type="text" value="${user.name}" onchange="app.updateUser(${index}, 'name', this.value)"
+                            class="flex-grow p-1 border-b border-gray-300 focus:border-indigo-500 outline-none text-gray-700 bg-transparent">
+                        <button onclick="app.showConfirmation('Remove ${user.name} from the list?', app.removeUser.bind(app, ${index}))"
+                            title="Remove User" class="text-red-400 hover:text-red-600 transition">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </li>
+                `).join('');
+            },
+
+            renderPlaceList() {
+                const placeList = document.getElementById('placeList');
+                if (!placeList) return;
+
+                placeList.innerHTML = this.state.places.map((place, index) => `
+                    <li class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border">
+                        <i class="fa-solid fa-map-location-dot" style="color: ${place.color};"></i>
+                        <input type="text" value="${place.name}" onchange="app.updatePlace(${index}, 'name', this.value)"
+                            class="flex-grow p-1 border-b border-gray-300 focus:border-indigo-500 outline-none text-gray-700 bg-transparent">
+                        <input type="color" value="${place.color}" onchange="app.updatePlace(${index}, 'color', this.value)"
+                            class="w-8 h-8 rounded-full border-none cursor-pointer">
+                        <button onclick="app.showConfirmation('Remove place ${place.name} from the list?', app.removePlace.bind(app, ${index}))"
+                            title="Remove Place" class="text-red-400 hover:text-red-600 transition">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </li>
+                `).join('');
+            },
+
+            renderDayList() {
+                const dayList = document.getElementById('dayList');
+                if (!dayList) return;
+
+                dayList.innerHTML = this.state.days.map((day, index) => `
+                    <li class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border">
+                        <i class="fa-solid fa-calendar-day text-teal-500"></i>
+                        <input type="text" value="${day.name}" onchange="app.updateDay(${index}, 'name', this.value)"
+                            class="flex-grow p-1 border-b border-gray-300 focus:border-indigo-500 outline-none text-gray-700 bg-transparent">
+                        <button onclick="app.showConfirmation('Remove ${day.name} from the schedule?', app.removeDay.bind(app, ${index}))"
+                            title="Remove Day" class="text-red-400 hover:text-red-600 transition">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </li>
+                `).join('');
+            },
+
+            // --- USER ACTIONS ---
 
             addUser() {
-                const name = document.getElementById('userNameInput').value.trim();
-                if (!name) return this.showToast("User name cannot be empty.", true);
-
-                // New user schedule length is based on days
-                const newSchedule = Array(this.state.days.length).fill(0); // Fill new user's schedule with 'Free' (index 0)
-                this.state.users.push({ name, schedule: newSchedule });
-                
-                this.closeAddUserModal();
+                const newId = this.generateId();
+                const newUser = {
+                    id: newId,
+                    name: `User ${this.state.users.length + 1}`,
+                    color: "#6366f1",
+                    schedule: Array(this.state.days.length).fill(this.state.places[0] ? this.state.places[0].id : 0),
+                };
+                this.state.users.push(newUser);
+                this.ensureScheduleSize();
                 this.updateURL();
-                this.renderGrid();
-                this.showToast(`User '${name}' added!`);
+                this.renderAll();
+                this.showToast(`User ${newUser.name} added.`);
             },
 
-            deleteUser(userIndex) {
-                if (this.state.users.length === 1) {
-                    this.showToast("You must have at least one user.", true);
-                    return;
+            updateUser(index, key, value) {
+                if (this.state.users[index]) {
+                    this.state.users[index][key] = value;
+                    this.updateURL();
+                    this.renderAll();
                 }
-                const name = this.state.users[userIndex].name;
-                this.state.users.splice(userIndex, 1);
-                this.updateURL();
-                this.renderGrid();
-                this.showToast(`User '${name}' deleted.`);
             },
+
+            removeUser(index) {
+                this.state.users.splice(index, 1);
+                this.updateURL();
+                this.renderAll();
+                this.showToast("User removed.");
+            },
+
+            // --- PLACE ACTIONS ---
 
             addPlace() {
-                const name = document.getElementById('placeNameInput').value.trim();
-                const color = document.getElementById('placeColorInput').value;
-                if (!name) return this.showToast("Place name cannot be empty.", true);
-
-                this.state.places.push({ name, color });
-                
-                this.closeAddPlaceModal();
+                const newId = this.generateId();
+                const newPlace = {
+                    id: newId,
+                    name: `New Place`,
+                    color: "#f59e0b" // Amber-500
+                };
+                this.state.places.push(newPlace);
                 this.updateURL();
-                this.renderGrid();
-                this.showToast(`Place '${name}' added!`);
+                this.renderAll();
+                this.showToast(`Place ${newPlace.name} added.`);
             },
 
-            deletePlace(placeIndex) {
-                if (placeIndex === 0) {
-                    this.showToast("The 'Free' place cannot be deleted.", true);
-                    return;
+            updatePlace(index, key, value) {
+                if (this.state.places[index]) {
+                    this.state.places[index][key] = value;
+                    this.updateURL();
+                    this.renderAll();
                 }
-                
-                const name = this.state.places[placeIndex].name;
-                
-                // 1. Clear all cells that had this place
+            },
+
+            removePlace(index) {
+                const placeIdToRemove = this.state.places[index].id;
+                this.state.places.splice(index, 1);
+
+                // Update all schedules to use the default place if the removed place was assigned
+                const defaultPlaceId = this.state.places[0] ? this.state.places[0].id : 0;
                 this.state.users.forEach(user => {
-                    user.schedule = user.schedule.map(pIndex => 
-                        pIndex === placeIndex ? 0 : (pIndex > placeIndex ? pIndex - 1 : pIndex)
-                    );
+                    user.schedule = user.schedule.map(id => (id === placeIdToRemove ? defaultPlaceId : id));
                 });
 
-                // 2. Remove the place
-                this.state.places.splice(placeIndex, 1);
-                this.showToast(`Place '${name}' deleted and schedule updated.`);
                 this.updateURL();
-                this.renderGrid();
+                this.renderAll();
+                this.showToast("Place removed and schedules updated.");
             },
 
-            // --- CELL INTERACTION ---
+            // --- DAY ACTIONS ---
 
-            // Now takes dayIndex first, then userIndex
-            openMenu(event, dayIndex, userIndex) {
-                this.activeCell = { dayIndex, userIndex };
-                const menu = document.getElementById('selectionMenu');
-                const optionsContainer = document.getElementById('placeOptions');
-                
-                // Position the menu
-                const x = event.pageX;
-                const y = event.pageY;
-                
-                // Adjust position if it would go off the edge of the screen
-                const menuWidth = 200; // Estimate
-                const menuHeight = 300; // Estimate
-                
-                // Check right boundary
-                if (x + menuWidth > window.innerWidth) {
-                    menu.style.left = `${x - menuWidth - 10}px`;
-                } else {
-                    menu.style.left = `${x + 5}px`;
+            addDay() {
+                const newId = this.generateId();
+                const newDay = {
+                    id: newId,
+                    name: `Day ${this.state.days.length + 1}`,
+                };
+                this.state.days.push(newDay);
+                this.ensureScheduleSize(); // Ensure all users get a new slot
+                this.updateURL();
+                this.renderAll();
+                this.showToast(`Day ${newDay.name} added.`);
+            },
+
+            updateDay(index, key, value) {
+                if (this.state.days[index]) {
+                    this.state.days[index][key] = value;
+                    this.updateURL();
+                    this.renderAll();
                 }
-                
-                // Check bottom boundary
-                if (y + menuHeight > window.innerHeight + window.scrollY) {
-                    menu.style.top = `${y - menuHeight}px`;
-                } else {
-                    menu.style.top = `${y + 5}px`;
-                }
-                
-                // Render options
-                let optionsHtml = '';
-                this.state.places.forEach((place, index) => {
-                    if (place.isClear) return;
-                    optionsHtml += `
-                        <button onclick="app.applySchedule(${index})" 
-                                class="w-full text-left p-2 rounded-lg hover:bg-stone-100 transition-colors flex items-center space-x-2">
-                            <span class="block w-4 h-4 rounded-full shadow-md" style="background-color: ${place.color};"></span>
-                            <span class="text-sm font-medium text-stone-700">${place.name}</span>
-                        </button>`;
+            },
+
+            removeDay(index) {
+                this.state.days.splice(index, 1);
+                // Remove the corresponding day from every user's schedule
+                this.state.users.forEach(user => {
+                    if (index < user.schedule.length) {
+                        user.schedule.splice(index, 1);
+                    }
                 });
-                optionsContainer.innerHTML = optionsHtml;
-                
-                menu.classList.remove('hidden');
-                
-                // Add a click handler to close the menu when clicking outside
-                document.addEventListener('click', this.closeMenuHandler, true);
+                this.updateURL();
+                this.renderAll();
+                this.showToast("Day removed and schedules adjusted.");
             },
 
-            closeMenuHandler(event) {
-                const menu = document.getElementById('selectionMenu');
-                // Check if the click was outside the menu and not on a cell
-                if (menu && !menu.contains(event.target) && !event.target.classList.contains('schedule-cell')) {
+            // --- MENU ACTIONS ---
+
+            openMenu(userIndex, dayIndex, event) {
+                this.activeCell = { userIndex, dayIndex };
+                const menu = document.getElementById('placeMenu');
+                const menuContent = document.getElementById('menuContent');
+                const rect = event.currentTarget.getBoundingClientRect();
+
+                // Generate menu options
+                menuContent.innerHTML = `
+                    <p class="text-xs text-gray-500 uppercase font-semibold mb-2">Assign Place:</p>
+                    ${this.state.places.map(place => `
+                        <button onclick="app.assignPlace(${place.id})"
+                            class="block w-full text-left px-3 py-1 rounded-md text-sm font-medium hover:bg-indigo-100 transition duration-100"
+                            style="color: ${place.color};">
+                            <i class="fa-solid fa-location-dot w-4"></i> ${place.name}
+                        </button>
+                    `).join('')}
+                `;
+
+                // Position the menu near the clicked cell
+                menu.style.top = `${rect.top + rect.height / 2 + window.scrollY}px`;
+                menu.style.left = `${rect.left + rect.width / 2 + window.scrollX}px`;
+                menu.classList.remove('hidden');
+
+                // Add event listener to close menu when clicking outside
+                document.addEventListener('click', this.closeMenuHandler);
+            },
+
+            closeMenuHandler: (e) => {
+                const menu = document.getElementById('placeMenu');
+                // Check if the click was inside the menu or on a cell (to prevent immediate re-opening)
+                if (menu && !menu.contains(e.target) && !e.target.closest('.grid-cell')) {
                     app.closeMenu();
                 }
             },
 
             closeMenu() {
-                document.getElementById('selectionMenu').classList.add('hidden');
-                document.removeEventListener('click', this.closeMenuHandler, true);
-                this.activeCell = { dayIndex: -1, userIndex: -1 };
+                document.getElementById('placeMenu').classList.add('hidden');
+                document.removeEventListener('click', this.closeMenuHandler);
+                this.activeCell = null;
             },
 
-            applySchedule(placeIndex) {
-                if (this.activeCell.dayIndex === -1) return;
-                const { dayIndex, userIndex } = this.activeCell;
-                
-                // Schedule is stored in user.schedule[dayIndex]
+            assignPlace(placeIndex) {
+                if (!this.activeCell) return;
+                const { userIndex, dayIndex } = this.activeCell;
+
+                // Update the schedule with the selected place ID
                 this.state.users[userIndex].schedule[dayIndex] = placeIndex;
-                
+
                 this.updateURL();
                 this.renderGrid();
                 this.closeMenu();
             },
 
-            clearCell() {
-                // 'Free' is always index 0
-                this.applySchedule(0);
-            },
-            
-            resetSchedule() {
-                this.state = DEFAULT_STATE;
-                this.showToast("Schedule reset to default state.");
-                this.updateURL();
-                this.renderGrid();
-            },
 
-            // --- UI/MODAL UTILITIES ---
+            // --- CONFIRMATION MODAL LOGIC ---
 
-            showAddUserModal() {
-                document.getElementById('userNameInput').value = '';
-                document.getElementById('userModal').classList.remove('hidden');
-            },
-            closeAddUserModal() {
-                document.getElementById('userModal').classList.add('hidden');
-            },
-
-            showAddPlaceModal() {
-                document.getElementById('placeNameInput').value = '';
-                document.getElementById('placeColorInput').value = '#65a30d'; // Default color
-                document.getElementById('placeModal').classList.remove('hidden');
-            },
-            closeAddPlaceModal() {
-                document.getElementById('placeModal').classList.add('hidden');
-            },
-
-            /* --- CONFIRMATION MODAL --- */
-
-            showConfirmationModal(message, action) {
-                document.getElementById('confirmMessage').innerText = message;
+            showConfirmation(message, action) {
                 this.confirmAction = action;
+                document.getElementById('confirmMessage').innerText = message;
                 document.getElementById('confirmationModal').classList.remove('hidden');
             },
 
             closeConfirmationModal() {
                 document.getElementById('confirmationModal').classList.add('hidden');
-                this.confirmAction = null;
             },
-            
+
             acceptConfirmation() {
                 if (this.confirmAction) {
                     this.confirmAction();
@@ -534,34 +581,34 @@
                 this.closeConfirmationModal();
                 this.confirmAction = null;
             },
-            
+
             rejectConfirmation() {
                 this.closeConfirmationModal();
             },
 
-            /* --- TOAST LOGIC --- */
+            // --- TOAST LOGIC ---
 
             showToast(msg, isError = false) {
                 const toast = document.getElementById('toast');
                 const msgSpan = document.getElementById('toastMsg');
                 const icon = toast.querySelector('i');
-                
+
                 // Change colors and icons based on error status
                 if (isError) {
-                    toast.classList.remove('bg-emerald-900', 'border-emerald-700');
+                    toast.classList.remove('bg-gray-800', 'border-gray-700');
                     toast.classList.add('bg-red-800', 'border-red-600');
                     icon.className = "fa-solid fa-circle-exclamation text-red-300";
                 } else {
                     toast.classList.remove('bg-red-800', 'border-red-600');
-                    toast.classList.add('bg-emerald-900', 'border-emerald-700');
+                    toast.classList.add('bg-gray-800', 'border-gray-700');
                     icon.className = "fa-solid fa-circle-check text-emerald-400";
                 }
-                
+
                 msgSpan.innerText = msg;
-                
+
                 // Show toast
                 toast.classList.remove('translate-y-24');
-                
+
                 // Hide toast after 3 seconds
                 setTimeout(() => {
                     toast.classList.add('translate-y-24');
@@ -569,18 +616,7 @@
             }
         };
 
-        // Initialize on load
-        window.onload = () => {
-            app.loadInitialState();
-            app.renderGrid();
-        };
-
-        // Handle browser back/forward buttons
-        window.onpopstate = () => {
-            app.loadInitialState();
-            app.renderGrid();
-        };
-
+        window.onload = () => app.init();
     </script>
 </body>
 </html>
