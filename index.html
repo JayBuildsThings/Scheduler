@@ -74,7 +74,7 @@
             <h2 class="text-2xl font-bold mb-2">Who are you?</h2>
             <p class="text-gray-500 mb-4">Enter your name so others know who is planning.</p>
             <input type="text" id="username-input" class="w-full border border-gray-300 p-3 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. Alex">
-            <button onclick="saveName()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition">Join Schedule</button>
+            <button onclick="saveName()" id="join-schedule-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition">Join Schedule</button>
         </div>
     </div>
 
@@ -85,8 +85,11 @@
         // --- 1. CONFIGURATION ---
         
         // !!! IMPORTANT: REPLACE THESE PLACEHOLDERS WITH YOUR ACTUAL SUPABASE PROJECT CREDENTIALS !!!
+        // If you see an error like "Anonymous sign-ins are disabled," ensure these are correct 
+        // AND that Anonymous Sign-in is enabled in your Supabase Auth Settings.
         const SUPABASE_URL = 'https://pjrzqqtinpyrxpisncom.supabase.co'; // e.g., 'https://abcdefg1234.supabase.co'
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBqcnpxcXRpbnB5cnhwaXNuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwMzI1MDksImV4cCI6MjA3OTYwODUwOX0.5sgpY5xqsxUa3tTjmXLBgr8PAk6Cg8G2sMgzj1qCkgw'; // e.g., 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+
 
         // Initialize Supabase Client
         const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -103,16 +106,37 @@
         // --- 2. AUTHENTICATION & INIT ---
 
         /**
+         * Retries a function with exponential backoff.
+         */
+        async function retryWithBackoff(fn, maxRetries = 5, delay = 1000) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    return await fn();
+                } catch (error) {
+                    if (i === maxRetries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+                }
+            }
+        }
+
+
+        /**
          * Logs in the user anonymously using Supabase Auth
          */
         async function initApp() {
             try {
-                // Anonymous sign-in (Guest access, needed for RLS)
-                const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
-                
-                if (authError) {
-                    throw new Error(authError.message);
-                }
+                // Wrap sign-in in a retry block
+                const authData = await retryWithBackoff(async () => {
+                    const { data, error } = await supabase.auth.signInAnonymously();
+                    if (error) {
+                         // Check for the specific error message seen in your image
+                        if (error.message.includes("Anonymous sign-ins are disabled")) {
+                            throw new Error("Anonymous Sign-in Disabled. Check your Supabase Auth Settings.");
+                        }
+                        throw error;
+                    }
+                    return data;
+                }, 3, 500); // 3 retries max, starting at 500ms
                 
                 currentUserId = authData.user.id;
                 
@@ -121,11 +145,26 @@
                 if (storedViewMode) viewMode = storedViewMode;
                 
                 isAuthReady = true;
+                document.getElementById('loading-screen').classList.add('hidden'); // Hide loading screen on successful auth
                 handleRouting();
 
             } catch (error) {
                 console.error("Auth Error:", error);
-                document.getElementById('loading-screen').innerHTML = `<div class="p-10 text-center text-red-500">Error connecting to Supabase: ${error.message}. Please check your credentials and RLS settings.</div>`;
+                document.getElementById('loading-screen').classList.remove('hidden'); // Ensure screen is visible for error
+                let errorMessage = `Error connecting to Supabase: ${error.message}.`;
+                
+                if (error.message.includes("Anonymous Sign-in Disabled")) {
+                    errorMessage += " Please enable Anonymous Sign-in in your Supabase Auth settings.";
+                } else if (error.message.includes("Invalid key")) {
+                     errorMessage += " Please check your SUPABASE_URL and SUPABASE_ANON_KEY.";
+                }
+
+                document.getElementById('loading-screen').innerHTML = `
+                    <div class="p-10 text-center text-red-600 bg-red-50 rounded-xl shadow-lg m-4">
+                        <p class="font-bold mb-2">Connection Failed</p>
+                        <p class="text-sm">${errorMessage}</p>
+                    </div>
+                `;
             }
         }
         
@@ -266,6 +305,14 @@
         window.createGroup = async () => {
             const name = document.getElementById('new-group-name').value;
             if (!name) return;
+            
+            const createButton = document.querySelector('#main-content button');
+            let originalButtonHtml = createButton ? createButton.innerHTML : 'Create New Group';
+            if (createButton) {
+                createButton.disabled = true;
+                createButton.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Creating...`;
+            }
+
 
             try {
                 // 1. Insert Group
@@ -292,41 +339,94 @@
 
                 if (placesError) throw placesError;
 
+                // 3. Success, redirect
                 window.location.hash = `group/${newGroupId}`;
 
             } catch (e) {
                 console.error("Error creating group:", e);
-                console.error("Error creating group. Check console and Supabase RLS.");
+                
+                // Restore button state
+                if (createButton) {
+                    createButton.disabled = false;
+                    createButton.innerHTML = originalButtonHtml;
+                }
+                
+                // Show a friendly error message on the UI
+                document.getElementById('main-content').innerHTML = `
+                    <div class="h-full flex items-center justify-center text-center p-8">
+                        <div class="bg-red-50 border border-red-300 p-6 rounded-lg shadow-lg max-w-sm">
+                            <h3 class="text-xl font-bold text-red-700 mb-3">Group Creation Failed</h3>
+                            <p class="text-red-600 text-sm mb-3">
+                                We could not create the group. This is usually caused by an RLS (Row Level Security) issue 
+                                or incorrect Supabase credentials.
+                            </p>
+                            <p class="text-red-600 text-xs mb-3 font-mono break-all">${e.message || 'Unknown Error'}</p>
+                            <button onclick="window.location.hash=''" class="mt-4 text-blue-600 hover:text-blue-800 font-medium">Go back to start</button>
+                        </div>
+                    </div>
+                `;
             }
         };
 
         // User Name Logic
         function checkUserName() {
             const storedName = localStorage.getItem('planit_username');
+            // Check if the current user ID is already registered in the group_users table for this group
             const isRegistered = groupData.users.some(u => u.user_id === currentUserId);
             
             // Show modal if name is not set OR if user is not yet registered in this group
             if (!storedName || !isRegistered) {
                 document.getElementById('name-modal').classList.remove('hidden');
+                // Pre-fill input if name is stored but registration failed previously
+                if (storedName) {
+                    document.getElementById('username-input').value = storedName;
+                }
+            } else {
+                // IMPORTANT: Hide modal if user is registered and name is stored
+                document.getElementById('name-modal').classList.add('hidden');
             }
         }
 
-        window.saveName = () => {
+        // UPDATED: make async and wait for registration
+        window.saveName = async () => {
             const name = document.getElementById('username-input').value.trim();
             if (!name) return;
+            
+            const joinButton = document.getElementById('join-schedule-button');
+            joinButton.disabled = true;
+            const originalText = joinButton.textContent;
+            joinButton.textContent = 'Joining...';
+            
             localStorage.setItem('planit_username', name);
-            document.getElementById('name-modal').classList.add('hidden');
-            registerUserInGroup(name);
+            
+            // Wait for the registration call to complete
+            const success = await registerUserInGroup(name);
+            
+            joinButton.disabled = false;
+            joinButton.textContent = originalText;
+            
+            if (success) {
+                document.getElementById('name-modal').classList.add('hidden');
+                // After successful registration, force a re-render to update the user list
+                // and potentially hide the "you" flag correctly if it wasn't there before.
+                fetchAndRender();
+            } else {
+                // If registration failed (e.g., RLS error), provide feedback
+                console.error("Failed to register user, modal remains open.");
+                alert("Failed to join the schedule. Please check the console for details.");
+            }
         }
 
         async function registerUserInGroup(name) {
-            if (!currentUserId || !currentGroupId) return;
+            if (!currentUserId || !currentGroupId) return false;
             
             const userData = {
                 user_id: currentUserId,
                 group_id: currentGroupId,
                 display_name: name
             };
+            
+            console.log("Attempting to register user:", userData);
 
             // Use upsert to handle both insert (new user) and update (name change)
             const { error } = await supabase
@@ -334,12 +434,16 @@
                 .upsert(userData, { onConflict: 'user_id, group_id' });
 
             if (error) {
-                console.error("Error registering user:", error);
+                console.error("Error registering user (RLS issue likely):", error);
+                return false;
             }
+            
+            return true;
         }
 
         // Add Place
         window.addPlace = async () => {
+            // Using a simple prompt as a temporary modal replacement
             const name = prompt("Enter name for new place:");
             if (!name) return;
             
@@ -700,6 +804,8 @@
         }
 
         // Start
+        // Ensure the loading screen is immediately visible before starting auth
+        document.getElementById('loading-screen').classList.remove('hidden');
         initApp();
 
     </script>
