@@ -31,11 +31,30 @@
             white-space: nowrap; /* Prevent elements inside from wrapping */
         }
 
-        /* Fix the user column in Row View */
-        .sticky-user-col {
+        /* NEW STYLING FOR EXCEL-LIKE GRID */
+        .excel-grid {
+            border-collapse: collapse;
+            border-spacing: 0;
+            width: 100%;
+        }
+        .excel-grid td, .excel-grid th {
+            border: 1px solid #d1d5db; /* gray-300 */
+            text-align: center;
+            padding: 0; /* Remove default padding, use inner divs for spacing */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .excel-grid th {
+            background-color: #f3f4f6; /* gray-100 */
+            font-weight: 600;
+        }
+        .excel-grid .sticky-user-col {
             position: sticky;
             left: 0;
-            z-index: 10; /* Above the date cells */
+            z-index: 10;
+            background-color: #f9fafb; /* Lighter background for the sticky column */
+            box-shadow: 2px 0 5px -2px rgba(0,0,0,0.1);
         }
     </style>
 </head>
@@ -85,11 +104,8 @@
         // --- 1. CONFIGURATION ---
         
         // !!! IMPORTANT: REPLACE THESE PLACEHOLDERS WITH YOUR ACTUAL SUPABASE PROJECT CREDENTIALS !!!
-        // If you see an error like "Anonymous sign-ins are disabled," ensure these are correct 
-        // AND that Anonymous Sign-in is enabled in your Supabase Auth Settings.
         const SUPABASE_URL = 'https://pjrzqqtinpyrxpisncom.supabase.co'; // e.g., 'https://abcdefg1234.supabase.co'
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBqcnpxcXRpbnB5cnhwaXNuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwMzI1MDksImV4cCI6MjA3OTYwODUwOX0.5sgpY5xqsxUa3tTjmXLBgr8PAk6Cg8G2sMgzj1qCkgw'; // e.g., 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
-
 
         // Initialize Supabase Client
         const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -101,7 +117,7 @@
         let realtimeChannel = null;
         let selectedPlace = null; 
         let isAuthReady = false; 
-        let viewMode = 'columns'; 
+        let viewMode = 'rows'; // Default to the new Excel-like Row View
         
         // --- 2. AUTHENTICATION & INIT ---
 
@@ -413,7 +429,11 @@
             } else {
                 // If registration failed (e.g., RLS error), provide feedback
                 console.error("Failed to register user, modal remains open.");
-                alert("Failed to join the schedule. Please check the console for details.");
+                // Using an internal error message instead of alert()
+                document.getElementById('join-schedule-button').textContent = 'Error Joining';
+                setTimeout(() => {
+                    document.getElementById('join-schedule-button').textContent = originalText;
+                }, 2000);
             }
         }
 
@@ -447,20 +467,18 @@
             const name = prompt("Enter name for new place:");
             if (!name) return;
             
+            // Removed fixed colors, using a more generic, darker look for the new Excel-like style
+            // Note: Colors are still required for the DB schema, but we'll use them more subtly.
             const colors = [
-                'bg-purple-100 text-purple-800 border-purple-200',
-                'bg-pink-100 text-pink-800 border-pink-200',
-                'bg-yellow-100 text-yellow-800 border-yellow-200',
-                'bg-teal-100 text-teal-800 border-teal-200',
-                'bg-red-100 text-red-800 border-red-200',
-                'bg-indigo-100 text-indigo-800 border-indigo-200'
+                'bg-gray-200 text-gray-800 border-gray-300',
+                'bg-gray-300 text-gray-900 border-gray-400',
             ];
             const randomColor = colors[Math.floor(Math.random() * colors.length)];
             
             const newPlace = {
                 group_id: currentGroupId,
                 name: name,
-                color: randomColor
+                color: randomColor // Color will be ignored for cell background in the new style but kept for toolbar
             };
 
             const { error } = await supabase
@@ -571,46 +589,63 @@
         
         function renderToolbar(places) {
             return `
-                <div class="bg-white border-b border-gray-200 p-4 flex gap-3 overflow-x-auto no-scrollbar items-center">
-                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider mr-2 flex-shrink-0">I am at:</span>
+                <div class="bg-gray-100 border-b border-gray-300 p-3 flex gap-2 overflow-x-auto no-scrollbar items-center sticky top-0 z-20">
+                    <span class="text-xs font-bold text-gray-600 uppercase tracking-wider mr-2 flex-shrink-0 whitespace-nowrap">Current Status:</span>
+                    
                     ${places.map(p => `
                         <button onclick="window.selectPlace('${p.id}')" 
-                            class="${p.color} px-4 py-2 rounded-full border text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0
-                                ${selectedPlace === p.id ? 'ring-2 ring-offset-2 ring-gray-400 scale-105 shadow-md' : 'opacity-70 hover:opacity-100'}">
+                            class="px-3 py-1 rounded-full border text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0
+                                ${p.color.replace('bg-', 'bg-').replace('text-', 'text-').replace('border-', 'border-')}
+                                ${selectedPlace === p.id ? 'ring-2 ring-offset-2 ring-blue-500 scale-105 shadow-md border-2 !border-blue-600' : 'opacity-80 hover:opacity-100 border-gray-400'}">
                             ${p.name}
                         </button>
                     `).join('')}
                     
-                    <button onclick="window.addPlace()" title="Add New Place" class="w-8 h-8 flex items-center justify-center rounded-full border border-dashed border-gray-400 text-gray-400 hover:text-blue-500 hover:border-blue-500 transition flex-shrink-0">
-                        <i class="fa-solid fa-plus"></i>
+                    <button onclick="window.addPlace()" title="Add New Place" class="w-7 h-7 flex items-center justify-center rounded-full border border-dashed border-gray-500 text-gray-500 hover:text-blue-500 hover:border-blue-500 transition flex-shrink-0">
+                        <i class="fa-solid fa-plus text-xs"></i>
                     </button>
                     
-                    <div class="ml-auto text-sm text-gray-500 hidden md:block flex-shrink-0">
-                        Select a place, then tap the grid.
+                    <div class="ml-auto text-xs text-gray-500 hidden md:block flex-shrink-0 whitespace-nowrap">
+                        Select an option, then click a cell to mark your schedule.
                     </div>
                 </div>
             `;
         }
 
-        // Horizontal Grid View (Desktop Default)
+        // Horizontal Grid View (Desktop Default) - RADICALLY REVISED FOR EXCEL LOOK
         function renderRowView(dates, users, schedule, places) {
             const myId = currentUserId;
 
-            const renderDateHeaders = dates.map(d => {
+            // Generate Date Headers
+            const dateHeaders = dates.map(d => {
                 const isToday = d.toDateString() === new Date().toDateString();
-                const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                const dayOfWeek = d.toLocaleDateString('en-US', {weekday: 'short'}).toUpperCase().charAt(0);
+                const dayOfMonth = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}).split(' ')[1]; // "24"
+                
                 return `
-                    <div class="w-20 md:w-24 p-2 flex-shrink-0 text-center border-r border-gray-100 ${isToday ? 'bg-blue-50' : ''} ${isWeekend ? 'bg-gray-50' : ''}">
-                        <div class="text-xs text-gray-400 uppercase font-bold">${d.toLocaleDateString('en-US', {weekday: 'short'})}</div>
-                        <div class="text-sm font-bold text-gray-700 ${isToday ? 'text-blue-600' : ''}">${d.getDate()}</div>
-                    </div>
+                    <th class="w-20 md:w-24 h-16 p-1 text-center bg-gray-100 ${isToday ? 'bg-blue-200/50' : ''}">
+                        <div class="text-xs text-gray-500 uppercase font-bold">${dayOfWeek}</div>
+                        <div class="text-lg font-extrabold text-gray-800 ${isToday ? 'text-blue-700' : ''}">${dayOfMonth}</div>
+                    </th>
                 `;
             }).join('');
 
-            const renderUserRows = users.map(user => {
+            // Generate User Rows
+            const userRows = users.map(user => {
                 const isMe = myId === user.user_id;
                 
-                const renderCells = dates.map(d => {
+                const userCellContent = `
+                    <div class="w-full h-full p-2 flex items-center justify-start text-left bg-gray-50 ${isMe ? 'bg-blue-50' : ''}">
+                        <div class="w-6 h-6 rounded-full bg-blue-500/10 text-blue-700 flex items-center justify-center text-xs font-bold mr-2 flex-shrink-0">
+                            ${user.display_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div class="truncate text-sm font-medium text-gray-900">
+                            ${user.display_name} ${isMe ? '<span class="text-xs text-blue-600 ml-1"></span>' : ''}
+                        </div>
+                    </div>
+                `;
+                
+                const cells = dates.map(d => {
                     const dateKey = formatDateKey(d);
                     
                     // Find schedule entry for this user and date
@@ -623,60 +658,50 @@
                     const isEditable = isMe;
                     const isToday = d.toDateString() === new Date().toDateString();
                     
+                    // Determine background color based on status
+                    let cellClasses = 'w-20 md:w-24 h-16 relative transition-colors';
+                    if (isToday) cellClasses += ' bg-blue-50/20'; // Highlight today's column faintly
+                    if (isEditable) cellClasses += ' cursor-pointer hover:bg-gray-200';
+                    if (place && isMe) cellClasses += ' !bg-blue-100/50'; // Slight highlight for my confirmed cell
+
                     return `
-                        <div onclick="${isEditable ? `window.toggleCell('${dateKey}')` : ''}" 
-                            class="w-20 md:w-24 h-14 md:h-16 flex-shrink-0 border-r border-gray-100 border-dotted relative flex items-center justify-center transition-all
-                                ${isEditable ? 'cursor-pointer hover:bg-gray-100' : 'cursor-default'}
-                                ${isToday ? 'bg-blue-50/30' : ''}
-                            ">
-                            
-                            ${place ? `
-                                <div class="${place.color} text-xs font-semibold px-2 py-1 rounded shadow-sm max-w-[90%] truncate text-center select-none pointer-events-none transform transition-transform group-hover:scale-105">
-                                    ${place.name}
-                                </div>
-                            ` : `
-                                ${isEditable && selectedPlace ? '<div class="opacity-30 text-gray-400 text-xs font-medium">Click to set</div>' : ''}
-                            `}
-                        </div>
+                        <td onclick="${isEditable ? `window.toggleCell('${dateKey}')` : ''}" 
+                            class="${cellClasses}">
+                            <div class="w-full h-full flex items-center justify-center text-sm font-medium ${place ? 'text-gray-900' : 'text-gray-400 italic'}">
+                                ${place ? place.name : (isEditable && selectedPlace ? 'Click to Set' : '')}
+                            </div>
+                        </td>
                     `;
                 }).join('');
                                         
                 return `
-                    <div class="flex border-b border-gray-100 hover:bg-gray-50 transition-colors group">
-                        <!-- User Name Column -->
-                        <div class="w-32 md:w-48 p-3 flex-shrink-0 border-r border-gray-200 flex items-center bg-white sticky-user-col shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                            <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-gray-200 to-gray-300 flex items-center justify-center text-gray-600 font-bold text-xs mr-3">
-                                ${user.display_name.charAt(0).toUpperCase()}
-                            </div>
-                            <div class="truncate">
-                                <div class="text-sm font-medium text-gray-900 truncate">${user.display_name} ${isMe ? '<span class="text-xs text-blue-500 bg-blue-50 px-1 rounded ml-1">(You)</span>' : ''}</div>
-                            </div>
-                        </div>
-
-                        <!-- Date Cells -->
-                        ${renderCells}
-                    </div>
+                    <tr>
+                        <td class="sticky-user-col w-32 md:w-48 p-0 text-left">
+                            ${userCellContent}
+                        </td>
+                        ${cells}
+                    </tr>
                 `;
             }).join('');
 
             return `
-                <div class="row-view-container">
-                    <div class="inline-block min-w-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        <!-- Header Row (Dates) -->
-                        <div class="flex border-b border-gray-200">
-                            <div class="w-32 md:w-48 p-3 flex-shrink-0 bg-gray-50 border-r border-gray-200 font-bold text-gray-500 text-sm flex items-center sticky-user-col">
-                                Team Member
-                            </div>
-                            ${renderDateHeaders}
-                        </div>
-                        <!-- User Rows -->
-                        ${renderUserRows}
-                    </div>
+                <div class="row-view-container p-2">
+                    <table class="excel-grid">
+                        <thead>
+                            <tr>
+                                <th class="w-32 md:w-48 p-2 text-left sticky-user-col">Team Member</th>
+                                ${dateHeaders}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${userRows}
+                        </tbody>
+                    </table>
                 </div>
             `;
         }
         
-        // Vertical/Mobile View (Transposed Grid)
+        // Vertical/Mobile View (Transposed Grid) - RETAINED FOR MOBILE
         function renderColumnView(dates, users, schedule, places) {
             const myId = currentUserId;
 
@@ -713,7 +738,7 @@
                             <!-- Place Indicator (The Cell Content) -->
                             <div class="flex-shrink-0 ml-2">
                                 ${place ? `
-                                    <div class="${place.color} text-xs font-semibold px-2 py-1 rounded shadow-sm text-center select-none">
+                                    <div class="text-sm font-semibold px-1 py-0 rounded text-gray-800 select-none">
                                         ${place.name}
                                     </div>
                                 ` : `
@@ -743,11 +768,12 @@
             }).join('');
 
             return `
-                <div class="max-w-md mx-auto w-full">
+                <div class="max-w-md mx-auto w-full p-2">
                     ${renderDateColumns}
                 </div>
             `;
         }
+
 
         // --- 8. MAIN RENDER FUNCTION ---
 
@@ -791,7 +817,7 @@
                     ${renderToolbar(places)}
                     
                     <!-- SCHEDULER VIEW -->
-                    <div class="flex-1 overflow-auto bg-gray-50 p-4">
+                    <div class="flex-1 overflow-auto bg-white">
                         ${viewMode === 'columns' 
                             ? renderColumnView(dates, users, schedule, places) 
                             : renderRowView(dates, users, schedule, places)
